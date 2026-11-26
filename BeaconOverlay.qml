@@ -36,8 +36,8 @@ Item {
   property string selectedColor: ""
   property var workspacesData: ({})
   property string fxMode: "clean"
-  property string hudStyle: "banner"
-  property bool autoSense: false
+  property string hudStyle: "brutal"
+  property bool autoSense: true
   property bool flashHud: true
   property string sensedSummary: ""
 
@@ -137,8 +137,8 @@ Item {
       var data = JSON.parse(txt)
       root.workspacesData = data.workspaces || ({})
       root.fxMode = data.fx || "clean"
-      root.hudStyle = data.hudStyle || "banner"
-      root.autoSense = !!data.autoSense
+      root.hudStyle = data.hudStyle || "brutal"
+      root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
   }

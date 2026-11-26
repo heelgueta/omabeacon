@@ -40,9 +40,9 @@ def default_state() -> dict:
     return {
         "version": 1,
         "fx": "clean",
-        "autoSense": False,
+        "autoSense": True,
         "flashHud": True,
-        "hudStyle": "banner",
+        "hudStyle": "brutal",
         "hudPreviewSeq": 0,
         "workspaces": {},
     }
@@ -60,9 +60,9 @@ def load_state() -> dict:
 
     base = default_state()
     base["fx"] = data.get("fx") if data.get("fx") in VALID_FX else "clean"
-    base["autoSense"] = bool(data.get("autoSense", False))
+    base["autoSense"] = True if "autoSense" not in data else bool(data.get("autoSense"))
     base["flashHud"] = bool(data.get("flashHud", True))
-    base["hudStyle"] = data.get("hudStyle") if data.get("hudStyle") in VALID_HUD_STYLES else "banner"
+    base["hudStyle"] = data.get("hudStyle") if data.get("hudStyle") in VALID_HUD_STYLES else "brutal"
     base["hudPreviewSeq"] = int(data.get("hudPreviewSeq", 0))
     ws = data.get("workspaces")
     base["workspaces"] = ws if isinstance(ws, dict) else {}

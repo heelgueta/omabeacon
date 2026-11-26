@@ -26,10 +26,11 @@ BarWidget {
   property int activeWsId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
   property var workspacesData: ({})
   property string fxMode: "clean"
-  property bool autoSense: false
+  property bool autoSense: true
   property bool flashHud: true
-  property string hudStyle: "banner"
+  property string hudStyle: "brutal"
   property int hudPreviewSeq: -1
+  property int pendingAutoHudWsId: -1
   property string sensedText: ""
   property int sensedWsId: -1
 
@@ -86,7 +87,7 @@ BarWidget {
     } else {
       root.hudDisplayText = text
     }
-    hudHideTimer.interval = (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 650 : 760
+    hudHideTimer.interval = (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 420 : 520
     hudHideTimer.restart()
   }
 
@@ -105,7 +106,12 @@ BarWidget {
       root.triggerScramble(root.rawDisplayNote)
       if (newWsId !== root.lastHudWsId) {
         root.lastHudWsId = newWsId
-        root.triggerHud(newWsId, root.rawDisplayNote)
+        if (root.rawDisplayNote !== "") {
+          root.pendingAutoHudWsId = -1
+          root.triggerHud(newWsId, root.rawDisplayNote, false)
+        } else if (root.autoSense) {
+          root.pendingAutoHudWsId = newWsId
+        }
       }
     }
   }
@@ -147,9 +153,9 @@ BarWidget {
       var data = JSON.parse(txt)
       root.workspacesData = data.workspaces || ({})
       root.fxMode = data.fx || "clean"
-      root.autoSense = !!data.autoSense
+      root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
-      root.hudStyle = data.hudStyle || "banner"
+      root.hudStyle = data.hudStyle || "brutal"
       var seq = parseInt(data.hudPreviewSeq || 0)
       var shouldDemo = (root.hudPreviewSeq !== -1 && seq !== root.hudPreviewSeq)
       root.hudPreviewSeq = seq
@@ -198,6 +204,10 @@ BarWidget {
       if (code === 0) {
         root.sensedWsId = root.activeWsId
         root.sensedText = senseProc.buf.trim()
+        if (root.pendingAutoHudWsId === root.activeWsId && root.manualNote === "" && root.sensedText !== "" && root.sensedText !== "empty") {
+          root.pendingAutoHudWsId = -1
+          root.triggerHud(root.activeWsId, "⚡ " + root.sensedText, false)
+        }
       }
       senseProc.buf = ""
     }
@@ -534,7 +544,7 @@ BarWidget {
       radius: flashHudWindow.isFullWidth ? 0 : Style.cornerRadius
       clip: true
       color: {
-        if (root.hudStyle === "brutal") return Qt.rgba(0.03, 0.03, 0.05, 0.92)
+        if (root.hudStyle === "brutal") return "transparent"
         if (root.hudStyle === "crt") return Qt.rgba(0.04, 0.05, 0.08, 0.94)
         return Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.92)
       }
@@ -544,30 +554,31 @@ BarWidget {
       scale: (flashHudWindow.isCentered && !root.hudVisible) ? 0.94 : 1.0
 
       Behavior on opacity {
-        NumberAnimation { duration: root.hudVisible ? 55 : 130; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: root.hudVisible ? 45 : 95; easing.type: Easing.OutCubic }
       }
       Behavior on scale {
-        NumberAnimation { duration: root.hudVisible ? 70 : 130; easing.type: Easing.OutBack }
+        NumberAnimation { duration: root.hudVisible ? 55 : 95; easing.type: Easing.OutBack }
       }
 
-      // Top & bottom neon rails for full-width/centered styles
+      // Top & bottom neon rails for full-width/centered styles (except transparent brutal)
       Rectangle {
+        visible: root.hudStyle !== "brutal"
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 3 : 2
+        height: root.hudStyle === "splat" ? 3 : 2
         color: root.wsColor
       }
       Rectangle {
-        visible: flashHudWindow.isFullWidth || root.hudStyle === "splat"
+        visible: root.hudStyle !== "brutal" && (flashHudWindow.isFullWidth || root.hudStyle === "splat")
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        height: (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 3 : 2
+        height: root.hudStyle === "splat" ? 3 : 2
         color: root.wsColor
       }
 
-      // CRT / Amiga copper raster bars (for crt & brutal)
+      // CRT / Amiga copper raster bars (for crt)
       Column {
         visible: root.hudStyle === "crt"
         anchors.fill: parent
@@ -583,11 +594,12 @@ BarWidget {
         }
       }
 
-      // Heavy scanlines
+      // Heavy scanlines (except transparent brutal)
       Column {
+        visible: root.hudStyle !== "brutal"
         anchors.fill: parent
-        spacing: root.hudStyle === "crt" || root.hudStyle === "brutal" ? 2 : 3
-        opacity: root.hudStyle === "crt" || root.hudStyle === "brutal" ? 0.26 : 0.12
+        spacing: root.hudStyle === "crt" ? 2 : 3
+        opacity: root.hudStyle === "crt" ? 0.26 : 0.12
         Repeater {
           model: 48
           Rectangle {
@@ -653,6 +665,18 @@ BarWidget {
             Layout.alignment: Qt.AlignHCenter
             implicitWidth: Math.min(hudMainCol.width, mainHudText.implicitWidth)
             implicitHeight: mainHudText.implicitHeight
+
+            // Dark legibility shadow for transparent brutal text
+            Text {
+              visible: root.hudStyle === "brutal"
+              x: 2; y: 3
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              text: mainHudText.text
+              color: Qt.rgba(0, 0, 0, 0.80)
+              font: mainHudText.font
+              elide: Text.ElideRight
+            }
 
             // Cyan chromatic aberration ghost (brutal only)
             Text {
