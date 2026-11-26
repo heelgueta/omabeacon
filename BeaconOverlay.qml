@@ -19,7 +19,7 @@ Item {
   readonly property string cliPath: Qt.resolvedUrl("bin/omabeacon").toString().replace(/^file:\/\//, "")
 
   readonly property var fxModes: ["clean", "pulse", "copper", "scramble", "marquee", "stealth"]
-  readonly property var hudStyles: ["glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "boss", "vhs"]
+  readonly property var hudStyles: ["glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "vhs"]
   readonly property var hudPositions: ["top", "center", "bottom"]
   readonly property var hudSizes: ["sm", "md", "lg", "xl", "xxl", "mega"]
   readonly property var hudColorFxs: ["low", "mid", "high", "flare"]
@@ -205,7 +205,7 @@ Item {
       root.workspacesData = data.workspaces || ({})
       root.fxMode = data.fx || "clean"
       var st = data.hudStyle || "glitch"
-      if (st === "brutal") st = "glitch"
+      if (st === "brutal" || st === "boss") st = "glitch"
       root.hudStyle = st
       root.hudPos = data.hudPos || "center"
       root.hudSize = data.hudSize || "md"
@@ -1102,6 +1102,34 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            // Reset visual/HUD settings to defaults (preserves workspace notes)
+            Rectangle {
+              radius: Style.space(4)
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+              border.width: 1
+              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+              implicitWidth: resetLabel.implicitWidth + Style.space(12)
+              implicitHeight: Style.space(26)
+
+              Text {
+                id: resetLabel
+                anchors.centerIn: parent
+                text: "↺ Reset FX"
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.65)
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  Quickshell.execDetached([root.cliPath, "reset"])
+                  noteInput.forceActiveFocus()
+                }
+              }
+            }
 
             // Editable Keybind pill
             Rectangle {

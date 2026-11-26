@@ -18,7 +18,7 @@ STATE_DIR = Path.home() / ".local" / "state" / "omarchy" / "omabeacon"
 STATE_FILE = STATE_DIR / "state.json"
 
 VALID_FX = ("clean", "pulse", "copper", "scramble", "marquee", "stealth")
-VALID_HUD_STYLES = ("glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "boss", "vhs")
+VALID_HUD_STYLES = ("glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "vhs")
 VALID_HUD_POS = ("top", "center", "bottom")
 VALID_HUD_SIZES = ("sm", "md", "lg", "xl", "xxl", "mega")
 VALID_HUD_COLORFX = ("low", "mid", "high", "flare")
@@ -132,15 +132,33 @@ def read_proc_comm(pid: int) -> str:
         return ""
 
 
-def read_proc_cwd_name(pid: int) -> str:
+def read_proc_cwd(pid: int) -> tuple[str, str]:
     try:
         cwd = os.readlink(f"/proc/{pid}/cwd")
     except OSError:
-        return ""
+        return "", ""
     home = str(Path.home())
     if cwd == home:
-        return "~"
-    return Path(cwd).name or cwd
+        return "~", ""
+    p = Path(cwd)
+    branch = ""
+    cur = p
+    for _ in range(5):
+        head = cur / ".git" / "HEAD"
+        if head.is_file():
+            try:
+                raw = head.read_text(encoding="utf-8", errors="replace").strip()
+                if raw.startswith("ref: refs/heads/"):
+                    branch = raw[len("ref: refs/heads/"):]
+                elif len(raw) >= 7:
+                    branch = raw[:7]
+            except OSError:
+                pass
+            break
+        if cur.parent == cur or str(cur) == home:
+            break
+        cur = cur.parent
+    return (p.name or cwd), branch
 
 
 def read_children(pid: int) -> list[int]:
@@ -160,11 +178,11 @@ def read_children(pid: int) -> list[int]:
     return children
 
 
-def deepest_interesting_proc(root_pid: int, max_depth: int = 4) -> tuple[str, str]:
-    """Walk child processes of a terminal to find the active foreground command and cwd."""
+def deepest_interesting_proc(root_pid: int, max_depth: int = 4) -> tuple[str, str, str]:
+    """Walk child processes of a terminal to find the active foreground command, cwd, and git branch."""
     current = root_pid
     best_comm = read_proc_comm(root_pid)
-    best_cwd = read_proc_cwd_name(root_pid)
+    best_cwd, best_branch = read_proc_cwd(root_pid)
 
     for _ in range(max_depth):
         kids = read_children(current)
@@ -173,14 +191,15 @@ def deepest_interesting_proc(root_pid: int, max_depth: int = 4) -> tuple[str, st
         # Prefer the most recently spawned child (usually foreground)
         nxt = kids[-1]
         comm = read_proc_comm(nxt)
-        cwd = read_proc_cwd_name(nxt)
+        cwd, branch = read_proc_cwd(nxt)
         if comm:
             best_comm = comm
         if cwd:
             best_cwd = cwd
+            best_branch = branch
         current = nxt
 
-    return best_comm, best_cwd
+    return best_comm, best_cwd, best_branch
 
 
 def active_workspace_id() -> int:
@@ -226,11 +245,12 @@ def sense_workspace(ws_id: int | None = None) -> dict:
         title = (c.get("title") or "").strip()
 
         if cls_low in TERMINAL_CLASSES and pid > 0:
-            comm, cwd = deepest_interesting_proc(pid)
+            comm, cwd, branch = deepest_interesting_proc(pid)
+            loc = f"{cwd}:{branch}" if (cwd and cwd != "~" and branch) else cwd
             if comm in SHELL_NAMES or not comm:
-                tag = cwd if cwd and cwd != "~" else (comm or "term")
+                tag = loc if loc and loc != "~" else (comm or "term")
             else:
-                tag = f"{comm}@{cwd}" if cwd and cwd != "~" else comm
+                tag = f"{comm}@{loc}" if loc and loc != "~" else comm
             term_tags.append(tag)
             details.append(f"term:{tag}")
         else:
@@ -328,6 +348,8 @@ def main() -> int:
 
     p_keybind = sub.add_parser("keybind", help="Update Hyprland keybinding for omabeacon")
     p_keybind.add_argument("combo")
+
+    sub.add_parser("reset", help="Reset visual/HUD settings to defaults (keeps workspace notes)")
 
     sub.add_parser("demo", help="Trigger a live flash HUD demo preview")
 
@@ -519,6 +541,14 @@ def main() -> int:
     if args.cmd == "demo":
         state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
         save_state(state)
+        return 0
+
+    if args.cmd == "reset":
+        fresh = default_state()
+        fresh["workspaces"] = state.get("workspaces", {})
+        fresh["keybind"] = state.get("keybind", "SUPER + N")
+        fresh["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(fresh)
         return 0
 
     return 1

@@ -163,7 +163,7 @@ BarWidget {
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
       var st = data.hudStyle || "glitch"
-      if (st === "brutal") st = "glitch"
+      if (st === "brutal" || st === "boss") st = "glitch"
       root.hudStyle = st
       root.hudPos = data.hudPos || "center"
       root.hudSize = data.hudSize || "md"
@@ -350,6 +350,11 @@ BarWidget {
     fixedWidth: Math.max(Style.space(34), contentRow.implicitWidth + Style.space(20))
     fixedHeight: root.barSize
     dimmed: root.fxMode === "stealth" && root.stealthDimmed && !pillButton.tooltipHovered
+    tooltipText: {
+      var head = "Workspace " + root.activeWsId + (root.wsGlyph !== "" ? (" " + root.wsGlyph) : "")
+      var body = root.rawDisplayNote !== "" ? root.rawDisplayNote : "No note set"
+      return head + " — " + body + "\nFX: " + root.fxMode + " · HUD: " + root.hudStyle + "\nLeft-click: edit · Right-click: cycle FX"
+    }
 
     onPressed: function(button) {
       if (button === Qt.RightButton) {
@@ -756,30 +761,6 @@ BarWidget {
         }
       }
 
-      // --- BOSS: Souls-like filigree hairline + center diamond ---
-      Item {
-        visible: root.hudStyle === "boss"
-        anchors.centerIn: parent
-        width: parent.width * 0.82
-        height: hudMainCol.implicitHeight + Style.space(34)
-        Rectangle {
-          anchors.bottom: parent.bottom
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: root.hudVisible ? parent.width : 0
-          height: 1.5
-          color: flashHudWindow.effectiveAccent
-          Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-        }
-        Rectangle {
-          anchors.bottom: parent.bottom
-          anchors.bottomMargin: -4
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: 9; height: 9
-          rotation: 45
-          color: flashHudWindow.effectiveAccent
-        }
-      }
-
       // --- VHS: corner OSD stamp ---
       Text {
         visible: root.hudStyle === "vhs"
@@ -822,7 +803,6 @@ BarWidget {
             if (root.hudStyle === "dos") return "C:\\OMARCHY\\WS_" + wsStr + "> [OK]"
             if (root.hudStyle === "radar") return "+ TARGET ACQUIRED :: SECTOR " + wsStr + " +"
             if (root.hudStyle === "sine") return "~~ DEMOSCENE :: WS " + wsStr + " ~~"
-            if (root.hudStyle === "boss") return "AREA " + wsStr
             if (root.hudStyle === "vhs") return "CH-" + wsStr + " // SP"
             if (root.hudStyle === "laser") return "0x" + wsStr + " // VECTOR LOCK"
             return "RETICLE // WS " + wsStr
@@ -907,7 +887,6 @@ BarWidget {
               if (root.hudStyle === "glitch") basePx = 64
               else if (root.hudStyle === "arcade") basePx = 56
               else if (root.hudStyle === "cyber") basePx = 50
-              else if (root.hudStyle === "boss") basePx = 46
               else if (root.hudStyle === "sine") basePx = 44
               else if (root.hudStyle === "vhs") basePx = 44
               else if (root.hudStyle === "radar") basePx = 40
@@ -916,9 +895,8 @@ BarWidget {
               else basePx = 28
               return Math.round(Style.space(basePx) * flashHudWindow.sizeMult)
             }
-            font.bold: root.hudStyle !== "boss"
+            font.bold: true
             font.letterSpacing: {
-              if (root.hudStyle === "boss") return 6
               if (root.hudStyle === "laser") return 4.5
               if (root.hudStyle === "glitch") return 3
               return 1.8
