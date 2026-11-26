@@ -18,10 +18,14 @@ BarWidget {
   readonly property string cliPath: Qt.resolvedUrl("bin/omabeacon").toString().replace(/^file:\/\//, "")
 
   readonly property var fxModes: ["clean", "pulse", "copper", "scramble", "marquee", "stealth"]
-  readonly property var defaultPalette: [
-    "#7aa2f7", "#bb9af7", "#7dcfff", "#9ece6a", "#e0af68",
-    "#f7768e", "#ff9e64", "#73daca", "#c0caf5", "#2ac3de"
-  ]
+  readonly property var palettes: ({
+    "tokyo": ["#f7768e", "#ff9e64", "#e0af68", "#9ece6a", "#73daca", "#7dcfff", "#7aa2f7", "#bb9af7", "#ff79c6", "#c0caf5"],
+    "neon": ["#ff0055", "#ff5500", "#ffcc00", "#39ff14", "#00ffcc", "#00e5ff", "#2979ff", "#aa00ff", "#ff00ff", "#ffffff"],
+    "pastel": ["#f38ba8", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89dceb", "#89b4fa", "#cba6f7", "#f5c2e7", "#cdd6f4"],
+    "mono": ["#00ff66", "#22ee77", "#44dd88", "#66cc99", "#88ddaa", "#aaf0cc", "#ccffdd", "#a0c4b0", "#7aa899", "#e0fff0"],
+    "fire": ["#ff1e42", "#ff4d2e", "#ff7700", "#ffa600", "#ffd000", "#ffe866", "#fff4b8", "#ff6b6b", "#ff3b8d", "#ffffff"]
+  })
+  readonly property var defaultPalette: palettes[paletteName] || palettes["tokyo"]
 
   property int activeWsId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
   property var workspacesData: ({})
@@ -33,6 +37,8 @@ BarWidget {
   property string hudSize: "md"
   property string hudColorFx: "mid"
   property string hudCase: "upper"
+  property string paletteName: "tokyo"
+  property string glyphPos: "above"
   property int hudPreviewSeq: -1
   property int pendingAutoHudWsId: -1
   property string sensedText: ""
@@ -40,6 +46,7 @@ BarWidget {
 
   // Current workspace computed properties
   readonly property var wsEntry: (workspacesData && workspacesData[String(activeWsId)]) ? workspacesData[String(activeWsId)] : null
+  readonly property string wsGlyph: wsEntry && wsEntry.glyph ? String(wsEntry.glyph) : ""
   readonly property string manualNote: wsEntry && wsEntry.note ? String(wsEntry.note) : ""
   readonly property bool isSensed: manualNote === "" && autoSense && sensedWsId === activeWsId && sensedText !== "" && sensedText !== "empty"
   readonly property string rawDisplayNote: manualNote !== "" ? manualNote : (isSensed ? ("⚡ " + sensedText) : "")
@@ -162,6 +169,8 @@ BarWidget {
       root.hudSize = data.hudSize || "md"
       root.hudColorFx = data.hudColorFx || "mid"
       root.hudCase = data.hudCase || "upper"
+      root.paletteName = data.palette || "tokyo"
+      root.glyphPos = data.glyphPos || "above"
       var seq = parseInt(data.hudPreviewSeq || 0)
       var shouldDemo = (root.hudPreviewSeq !== -1 && seq !== root.hudPreviewSeq)
       root.hudPreviewSeq = seq
@@ -456,9 +465,9 @@ BarWidget {
           }
         }
 
-        // Workspace number badge
+        // Workspace number badge + optional glyph
         Text {
-          text: String(root.activeWsId)
+          text: root.wsGlyph !== "" ? (root.activeWsId + " " + root.wsGlyph) : String(root.activeWsId)
           color: root.hasNote ? root.wsColor : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.55)
           font.family: Style.font.monoFamily || (root.bar ? root.bar.fontFamily : "")
           font.pixelSize: Style.font.caption
@@ -791,6 +800,15 @@ BarWidget {
         spacing: Style.space(6)
         width: flashHudWindow.allowOverflow ? implicitWidth : (hudCard.width - Style.space(48))
 
+        // Optional Emoji / Glyph ABOVE
+        Text {
+          visible: root.wsGlyph !== "" && root.glyphPos === "above"
+          Layout.alignment: Qt.AlignHCenter
+          text: root.wsGlyph
+          color: flashHudWindow.effectiveAccent
+          font.pixelSize: Math.round(Style.space(34) * flashHudWindow.sizeMult)
+        }
+
         // Telemetry micro-header
         Text {
           Layout.alignment: Qt.AlignHCenter
@@ -905,6 +923,15 @@ BarWidget {
             }
             elide: flashHudWindow.allowOverflow ? Text.ElideNone : Text.ElideRight
           }
+        }
+
+        // Optional Emoji / Glyph BELOW
+        Text {
+          visible: root.wsGlyph !== "" && root.glyphPos === "below"
+          Layout.alignment: Qt.AlignHCenter
+          text: root.wsGlyph
+          color: flashHudWindow.effectiveAccent
+          font.pixelSize: Math.round(Style.space(34) * flashHudWindow.sizeMult)
         }
       }
     }

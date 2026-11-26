@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,17 @@ VALID_HUD_POS = ("top", "center", "bottom")
 VALID_HUD_SIZES = ("sm", "md", "lg", "xl", "xxl", "mega")
 VALID_HUD_COLORFX = ("low", "mid", "high", "flare")
 VALID_HUD_CASE = ("upper", "asis", "lower")
+VALID_GLYPH_POS = ("off", "above", "below")
+
+PALETTES = {
+    "tokyo": ["#f7768e", "#ff9e64", "#e0af68", "#9ece6a", "#73daca", "#7dcfff", "#7aa2f7", "#bb9af7", "#ff79c6", "#c0caf5"],
+    "neon": ["#ff0055", "#ff5500", "#ffcc00", "#39ff14", "#00ffcc", "#00e5ff", "#2979ff", "#aa00ff", "#ff00ff", "#ffffff"],
+    "pastel": ["#f38ba8", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89dceb", "#89b4fa", "#cba6f7", "#f5c2e7", "#cdd6f4"],
+    "mono": ["#00ff66", "#22ee77", "#44dd88", "#66cc99", "#88ddaa", "#aaf0cc", "#ccffdd", "#a0c4b0", "#7aa899", "#e0fff0"],
+    "fire": ["#ff1e42", "#ff4d2e", "#ff7700", "#ffa600", "#ffd000", "#ffe866", "#fff4b8", "#ff6b6b", "#ff3b8d", "#ffffff"],
+}
+
+BINDINGS_FILE = Path.home() / ".config" / "hypr" / "bindings.lua"
 
 TERMINAL_CLASSES = {
     "alacritty",
@@ -51,6 +63,9 @@ def default_state() -> dict:
         "hudSize": "md",
         "hudColorFx": "mid",
         "hudCase": "upper",
+        "palette": "tokyo",
+        "glyphPos": "above",
+        "keybind": "SUPER + N",
         "hudPreviewSeq": 0,
         "workspaces": {},
     }
@@ -78,6 +93,9 @@ def load_state() -> dict:
     base["hudSize"] = data.get("hudSize") if data.get("hudSize") in VALID_HUD_SIZES else "md"
     base["hudColorFx"] = data.get("hudColorFx") if data.get("hudColorFx") in VALID_HUD_COLORFX else "mid"
     base["hudCase"] = data.get("hudCase") if data.get("hudCase") in VALID_HUD_CASE else "upper"
+    base["palette"] = data.get("palette") if data.get("palette") in PALETTES else "tokyo"
+    base["glyphPos"] = data.get("glyphPos") if data.get("glyphPos") in VALID_GLYPH_POS else "above"
+    base["keybind"] = str(data.get("keybind") or "SUPER + N")
     base["hudPreviewSeq"] = int(data.get("hudPreviewSeq", 0))
     ws = data.get("workspaces")
     base["workspaces"] = ws if isinstance(ws, dict) else {}
@@ -257,6 +275,7 @@ def main() -> int:
     p_set.add_argument("ws")
     p_set.add_argument("note")
     p_set.add_argument("--color", default=None)
+    p_set.add_argument("--glyph", default=None)
 
     p_clear = sub.add_parser("clear", help="Clear workspace beacon")
     p_clear.add_argument("ws")
@@ -289,6 +308,26 @@ def main() -> int:
     p_hudcase = sub.add_parser("hudcase", help="Set flash HUD text casing and optionally trigger demo")
     p_hudcase.add_argument("casing", choices=VALID_HUD_CASE)
     p_hudcase.add_argument("--demo", action="store_true")
+
+    p_palette = sub.add_parser("palette", help="Set active spectrum palette (overrides unlocked workspaces)")
+    p_palette.add_argument("name", choices=tuple(PALETTES.keys()))
+    p_palette.add_argument("--demo", action="store_true")
+
+    p_lock = sub.add_parser("lock", help="Lock/unlock workspace color against palette overrides")
+    p_lock.add_argument("ws")
+    p_lock.add_argument("mode", nargs="?", choices=("on", "off", "toggle"), default="toggle")
+
+    p_glyph = sub.add_parser("glyph", help="Set or clear emoji/glyph for a workspace")
+    p_glyph.add_argument("ws")
+    p_glyph.add_argument("glyph")
+    p_glyph.add_argument("--demo", action="store_true")
+
+    p_glyphpos = sub.add_parser("glyphpos", help="Set glyph position on flash HUD")
+    p_glyphpos.add_argument("pos", choices=VALID_GLYPH_POS)
+    p_glyphpos.add_argument("--demo", action="store_true")
+
+    p_keybind = sub.add_parser("keybind", help="Update Hyprland keybinding for omabeacon")
+    p_keybind.add_argument("combo")
 
     sub.add_parser("demo", help="Trigger a live flash HUD demo preview")
 
@@ -332,6 +371,11 @@ def main() -> int:
                     entry.pop("color", None)
                 else:
                     entry["color"] = args.color
+            if args.glyph is not None:
+                if args.glyph == "":
+                    entry.pop("glyph", None)
+                else:
+                    entry["glyph"] = args.glyph
             entry["updatedAt"] = int(time.time())
             state["workspaces"][key] = entry
         save_state(state)
@@ -401,6 +445,74 @@ def main() -> int:
         if args.demo:
             state["flashHud"] = True
             state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "palette":
+        state["palette"] = args.name
+        colors = PALETTES[args.name]
+        for k, entry in state["workspaces"].items():
+            if isinstance(entry, dict) and not entry.get("lockedColor", False):
+                idx = (int(k) - 1) % len(colors)
+                entry["color"] = colors[idx]
+        if args.demo:
+            state["flashHud"] = True
+            state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "lock":
+        key = normalize_ws(args.ws)
+        entry = state["workspaces"].get(key, {})
+        if args.mode == "toggle":
+            entry["lockedColor"] = not bool(entry.get("lockedColor", False))
+        else:
+            entry["lockedColor"] = args.mode == "on"
+        state["workspaces"][key] = entry
+        save_state(state)
+        return 0
+
+    if args.cmd == "glyph":
+        key = normalize_ws(args.ws)
+        entry = state["workspaces"].get(key, {})
+        g = args.glyph.strip()
+        if not g:
+            entry.pop("glyph", None)
+        else:
+            entry["glyph"] = g
+        if entry:
+            state["workspaces"][key] = entry
+        else:
+            state["workspaces"].pop(key, None)
+        if args.demo:
+            state["flashHud"] = True
+            state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "glyphpos":
+        state["glyphPos"] = args.pos
+        if args.demo:
+            state["flashHud"] = True
+            state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "keybind":
+        combo = args.combo.strip()
+        if not combo:
+            return 1
+        if BINDINGS_FILE.exists():
+            txt = BINDINGS_FILE.read_text(encoding="utf-8")
+            new_line = f'o.bind("{combo}", "Workspace beacon", "omarchy-shell shell toggle heelgueta.omabeacon")'
+            pattern = r'o\.bind\("[^"]+",\s*"Workspace beacon",\s*"omarchy-shell shell toggle heelgueta\.omabeacon"\)'
+            if re.search(pattern, txt):
+                txt = re.sub(pattern, new_line, txt)
+            else:
+                txt = txt.rstrip() + "\n\n-- omabeacon plugin\n" + new_line + "\n"
+            BINDINGS_FILE.write_text(txt, encoding="utf-8")
+            subprocess.run(["hyprctl", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        state["keybind"] = combo
         save_state(state)
         return 0
 

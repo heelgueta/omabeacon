@@ -23,17 +23,17 @@ Item {
   readonly property var hudSizes: ["sm", "md", "lg", "xl", "xxl", "mega"]
   readonly property var hudColorFxs: ["low", "mid", "high", "flare"]
   readonly property var hudCases: ["upper", "asis", "lower"]
-  readonly property var palette: [
-    "#7aa2f7", // 1: electric blue
-    "#bb9af7", // 2: neon violet
-    "#7dcfff", // 3: cyan
-    "#9ece6a", // 4: acid green
-    "#e0af68", // 5: amber
-    "#f7768e", // 6: crimson
-    "#ff9e64", // 7: tangerine
-    "#73daca", // 8: mint
-    "#c0caf5"  // 9: ice
-  ]
+  readonly property var glyphPositions: ["off", "above", "below"]
+  readonly property var quickGlyphs: ["⚡", "🔥", "🧪", "💀", "👾", "🚀", "🛠", "🧠", "📡", "☣", "◈", "✦"]
+  readonly property var paletteNames: ["tokyo", "neon", "pastel", "mono", "fire"]
+  readonly property var palettes: ({
+    "tokyo": ["#f7768e", "#ff9e64", "#e0af68", "#9ece6a", "#73daca", "#7dcfff", "#7aa2f7", "#bb9af7", "#ff79c6", "#c0caf5"],
+    "neon": ["#ff0055", "#ff5500", "#ffcc00", "#39ff14", "#00ffcc", "#00e5ff", "#2979ff", "#aa00ff", "#ff00ff", "#ffffff"],
+    "pastel": ["#f38ba8", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89dceb", "#89b4fa", "#cba6f7", "#f5c2e7", "#cdd6f4"],
+    "mono": ["#00ff66", "#22ee77", "#44dd88", "#66cc99", "#88ddaa", "#aaf0cc", "#ccffdd", "#a0c4b0", "#7aa899", "#e0fff0"],
+    "fire": ["#ff1e42", "#ff4d2e", "#ff7700", "#ffa600", "#ffd000", "#ffe866", "#fff4b8", "#ff6b6b", "#ff3b8d", "#ffffff"]
+  })
+  readonly property var palette: palettes[paletteName] || palettes["tokyo"]
 
   property bool opened: false
   property int editWsId: 1
@@ -45,6 +45,10 @@ Item {
   property string hudSize: "md"
   property string hudColorFx: "mid"
   property string hudCase: "upper"
+  property string paletteName: "tokyo"
+  property string glyphPos: "above"
+  property string currentKeybind: "SUPER + N"
+  property bool editingKeybind: false
   property bool autoSense: true
   property bool flashHud: true
   property string sensedSummary: ""
@@ -152,6 +156,9 @@ Item {
       root.hudSize = data.hudSize || "md"
       root.hudColorFx = data.hudColorFx || "mid"
       root.hudCase = data.hudCase || "upper"
+      root.paletteName = data.palette || "tokyo"
+      root.glyphPos = data.glyphPos || "above"
+      root.currentKeybind = data.keybind || "SUPER + N"
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
@@ -359,10 +366,10 @@ Item {
             elide: Text.ElideRight
           }
 
-          // Color swatches row
+          // Color swatches row (1-0 spectrum) + Lock Color toggle
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.space(8)
+            spacing: Style.space(6)
 
             Text {
               text: "COLOR"
@@ -375,8 +382,8 @@ Item {
             Repeater {
               model: root.palette
               delegate: Rectangle {
-                width: Style.space(22)
-                height: Style.space(22)
+                width: Style.space(20)
+                height: Style.space(20)
                 radius: width / 2
                 color: modelData
                 border.width: root.selectedColor === modelData ? 2.5 : 1
@@ -397,11 +404,167 @@ Item {
 
             Item { Layout.fillWidth: true }
 
+            // Lock workspace color against palette switches
+            Rectangle {
+              readonly property var wsObj: (root.workspacesData && root.workspacesData[String(root.editWsId)]) ? root.workspacesData[String(root.editWsId)] : null
+              readonly property bool isLocked: !!(wsObj && wsObj.lockedColor)
+              radius: Style.space(4)
+              color: isLocked
+                ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+              border.width: 1
+              border.color: isLocked ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+              implicitWidth: lockLabel.implicitWidth + Style.space(10)
+              implicitHeight: Style.space(22)
+
+              Text {
+                id: lockLabel
+                anchors.centerIn: parent
+                text: isLocked ? "🔒 Locked" : "🔓 Auto"
+                color: isLocked ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.6)
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  Quickshell.execDetached([root.cliPath, "lock", String(root.editWsId), "toggle"])
+                  noteInput.forceActiveFocus()
+                }
+              }
+            }
+          }
+
+          // Palette selector (overrides unlocked workspaces)
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
             Text {
-              text: "Ctrl+1..9"
-              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
+              text: "PALETTE"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
               font.family: root.monoFamily
               font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Repeater {
+              model: root.paletteNames
+              delegate: Rectangle {
+                readonly property bool active: root.paletteName === modelData
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+                implicitWidth: palLabel.implicitWidth + Style.space(10)
+                implicitHeight: Style.space(22)
+
+                Text {
+                  id: palLabel
+                  anchors.centerIn: parent
+                  text: modelData
+                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: active
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    Quickshell.execDetached([root.cliPath, "palette", modelData, "--demo"])
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
+            }
+
+            Item { Layout.fillWidth: true }
+          }
+
+          // Emoji / Glyph picker + Position (off | above | below)
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(4)
+
+            Text {
+              text: "GLYPH"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Repeater {
+              model: root.quickGlyphs
+              delegate: Rectangle {
+                readonly property var wsObj: (root.workspacesData && root.workspacesData[String(root.editWsId)]) ? root.workspacesData[String(root.editWsId)] : null
+                readonly property bool active: !!(wsObj && wsObj.glyph === modelData)
+                width: Style.space(22)
+                height: Style.space(22)
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.28)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+
+                Text {
+                  anchors.centerIn: parent
+                  text: modelData
+                  font.pixelSize: Style.font.caption
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    Quickshell.execDetached([root.cliPath, "glyph", String(root.editWsId), active ? "" : modelData, "--demo"])
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Repeater {
+              model: root.glyphPositions
+              delegate: Rectangle {
+                readonly property bool active: root.glyphPos === modelData
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+                implicitWidth: gPosLabel.implicitWidth + Style.space(8)
+                implicitHeight: Style.space(22)
+
+                Text {
+                  id: gPosLabel
+                  anchors.centerIn: parent
+                  text: modelData
+                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: active
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    Quickshell.execDetached([root.cliPath, "glyphpos", modelData, "--demo"])
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
             }
           }
 
@@ -768,11 +931,65 @@ Item {
 
             Item { Layout.fillWidth: true }
 
-            Text {
-              text: "Alt+1..0 switch ws"
-              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
-              font.family: root.monoFamily
-              font.pixelSize: Style.font.caption
+            // Editable Keybind pill
+            Rectangle {
+              radius: Style.space(4)
+              color: root.editingKeybind
+                ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.22)
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+              border.width: 1
+              border.color: root.editingKeybind ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+              implicitWidth: root.editingKeybind ? Style.space(130) : (kbLabel.implicitWidth + Style.space(14))
+              implicitHeight: Style.space(24)
+
+              Text {
+                id: kbLabel
+                visible: !root.editingKeybind
+                anchors.centerIn: parent
+                text: "⌨ " + root.currentKeybind
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.65)
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              TextInput {
+                id: kbInput
+                visible: root.editingKeybind
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                verticalAlignment: TextInput.AlignVCenter
+                color: root.foreground
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    event.accepted = true
+                    var val = kbInput.text.trim()
+                    if (val !== "") Quickshell.execDetached([root.cliPath, "keybind", val])
+                    root.editingKeybind = false
+                    noteInput.forceActiveFocus()
+                  } else if (event.key === Qt.Key_Escape) {
+                    event.accepted = true
+                    root.editingKeybind = false
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
+
+              MouseArea {
+                visible: !root.editingKeybind
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  kbInput.text = root.currentKeybind
+                  root.editingKeybind = true
+                  Qt.callLater(function() {
+                    kbInput.forceActiveFocus()
+                    kbInput.selectAll()
+                  })
+                }
+              }
             }
           }
 
