@@ -28,8 +28,10 @@ BarWidget {
   property string fxMode: "clean"
   property bool autoSense: true
   property bool flashHud: true
-  property string hudStyle: "brutal"
+  property string hudStyle: "glitch"
   property string hudPos: "center"
+  property string hudSize: "md"
+  property string hudColorFx: "mid"
   property int hudPreviewSeq: -1
   property int pendingAutoHudWsId: -1
   property string sensedText: ""
@@ -84,7 +86,7 @@ BarWidget {
     root.hudTargetText = text
     root.hudDisplayText = text
     hudScrambleTimer.restart()
-    hudHideTimer.interval = (root.hudStyle === "brutal" || root.hudStyle === "glitch") ? 420 : 480
+    hudHideTimer.interval = (root.hudStyle === "glitch" || root.hudStyle === "arcade") ? 420 : 480
     hudHideTimer.restart()
   }
 
@@ -152,8 +154,12 @@ BarWidget {
       root.fxMode = data.fx || "clean"
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
-      root.hudStyle = data.hudStyle || "brutal"
+      var st = data.hudStyle || "glitch"
+      if (st === "brutal") st = "glitch"
+      root.hudStyle = st
       root.hudPos = data.hudPos || "center"
+      root.hudSize = data.hudSize || "md"
+      root.hudColorFx = data.hudColorFx || "mid"
       var seq = parseInt(data.hudPreviewSeq || 0)
       var shouldDemo = (root.hudPreviewSeq !== -1 && seq !== root.hudPreviewSeq)
       root.hudPreviewSeq = seq
@@ -506,7 +512,7 @@ BarWidget {
     }
   }
 
-  // Optional Transparent Hacker Flash HUD (wire | laser | amiga | glitch | brutal)
+  // Optional Transparent Hacker Flash HUD (10 styles + size + color flare)
   PanelWindow {
     id: flashHudWindow
     visible: root.hudVisible || hudCard.opacity > 0.01
@@ -518,6 +524,21 @@ BarWidget {
     exclusionMode: ExclusionMode.Ignore
     mask: Region {}
 
+    readonly property real sizeMult: {
+      if (root.hudSize === "sm") return 0.55
+      if (root.hudSize === "lg") return 1.35
+      if (root.hudSize === "xl") return 1.80
+      if (root.hudSize === "xxl") return 2.35
+      if (root.hudSize === "mega") return 3.15
+      return 1.0
+    }
+    readonly property bool allowOverflow: root.hudSize === "xxl" || root.hudSize === "mega"
+    readonly property real accentAlpha: root.hudColorFx === "low" ? 0.45 : (root.hudColorFx === "mid" ? 0.85 : 1.0)
+    readonly property color effectiveAccent: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, accentAlpha)
+    readonly property color effectiveTextColor: root.hudColorFx === "high"
+      ? Qt.tint(Color.foreground, Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.48))
+      : Color.foreground
+
     Item {
       id: hudCard
       anchors.horizontalCenter: parent.horizontalCenter
@@ -527,15 +548,10 @@ BarWidget {
       anchors.bottom: root.hudPos === "bottom" ? parent.bottom : undefined
       anchors.bottomMargin: root.hudPos === "bottom" ? Style.space(44) : 0
       width: parent.width - Style.gapsOut * 2
-      height: {
-        if (root.hudStyle === "brutal") return Style.space(210)
-        if (root.hudStyle === "glitch") return Style.space(180)
-        if (root.hudStyle === "amiga") return Style.space(140)
-        if (root.hudStyle === "laser") return Style.space(100)
-        return Style.space(78)
-      }
+      height: Math.max(Style.space(90), hudMainCol.implicitHeight + Style.space(40))
       opacity: root.hudVisible ? 1.0 : 0.0
-      scale: !root.hudVisible ? (root.hudStyle === "glitch" ? 1.14 : 0.94) : 1.0
+      scale: !root.hudVisible ? (root.hudStyle === "arcade" ? 1.12 : 0.94) : 1.0
+      rotation: root.hudStyle === "arcade" ? -2.2 : 0
 
       Behavior on opacity {
         NumberAnimation { duration: root.hudVisible ? 45 : 95; easing.type: Easing.OutCubic }
@@ -544,66 +560,226 @@ BarWidget {
         NumberAnimation { duration: root.hudVisible ? 55 : 95; easing.type: Easing.OutBack }
       }
 
-      // --- WIRE style: floating corner reticle brackets ---
+      // --- FLARE FX (available on ANY style when hudColorFx === "flare") ---
+      Item {
+        visible: root.hudColorFx === "flare"
+        anchors.centerIn: parent
+        width: flashHudWindow.width
+        height: Style.space(120) * flashHudWindow.sizeMult
+
+        // Soft ambient color halo
+        Rectangle {
+          anchors.centerIn: parent
+          width: parent.width * 0.72
+          height: Style.space(44) * flashHudWindow.sizeMult
+          radius: height / 2
+          opacity: 0.22
+          gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 0.5; color: root.wsColor }
+            GradientStop { position: 1.0; color: "transparent" }
+          }
+        }
+        // Anamorphic horizontal lens-flare streak
+        Rectangle {
+          anchors.centerIn: parent
+          width: root.hudVisible ? flashHudWindow.width * 0.96 : 0
+          height: 3
+          opacity: 0.9
+          Behavior on width { NumberAnimation { duration: 110; easing.type: Easing.OutExpo } }
+          gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 0.35; color: root.wsColor }
+            GradientStop { position: 0.5; color: "#ffffff" }
+            GradientStop { position: 0.65; color: root.wsColor }
+            GradientStop { position: 1.0; color: "transparent" }
+          }
+        }
+        // Vertical star-flare spike
+        Rectangle {
+          anchors.centerIn: parent
+          width: 2
+          height: root.hudVisible ? Style.space(90) * Math.min(2.0, flashHudWindow.sizeMult) : 0
+          opacity: 0.65
+          Behavior on height { NumberAnimation { duration: 110; easing.type: Easing.OutExpo } }
+          gradient: Gradient {
+            orientation: Gradient.Vertical
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 0.5; color: root.wsColor }
+            GradientStop { position: 1.0; color: "transparent" }
+          }
+        }
+      }
+
+      // --- WIRE: floating corner reticle brackets ---
       Item {
         visible: root.hudStyle === "wire"
         anchors.centerIn: parent
         width: Math.min(parent.width, Math.max(Style.space(320), hudMainCol.implicitWidth + Style.space(56)))
-        height: Style.space(68)
+        height: hudMainCol.implicitHeight + Style.space(28)
 
-        // Top-left bracket
-        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: 18; height: 2; color: root.wsColor }
-        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: 2; height: 18; color: root.wsColor }
-        // Top-right bracket
-        Rectangle { anchors.top: parent.top; anchors.right: parent.right; width: 18; height: 2; color: root.wsColor }
-        Rectangle { anchors.top: parent.top; anchors.right: parent.right; width: 2; height: 18; color: root.wsColor }
-        // Bottom-left bracket
-        Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; width: 18; height: 2; color: root.wsColor }
-        Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; width: 2; height: 18; color: root.wsColor }
-        // Bottom-right bracket
-        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: 18; height: 2; color: root.wsColor }
-        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: 2; height: 18; color: root.wsColor }
+        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: 20; height: 2; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: 2; height: 20; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.top: parent.top; anchors.right: parent.right; width: 20; height: 2; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.top: parent.top; anchors.right: parent.right; width: 2; height: 20; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; width: 20; height: 2; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; width: 2; height: 20; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: 20; height: 2; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: 2; height: 20; color: flashHudWindow.effectiveAccent }
       }
 
-      // --- LASER style: twin expanding razor beams ---
+      // --- LASER: twin expanding razor beams ---
       Item {
         visible: root.hudStyle === "laser"
-        anchors.fill: parent
+        anchors.centerIn: parent
+        width: parent.width
+        height: hudMainCol.implicitHeight + Style.space(26)
         Rectangle {
           anchors.top: parent.top
           anchors.horizontalCenter: parent.horizontalCenter
           width: root.hudVisible ? parent.width * 0.88 : 0
           height: 2
-          color: root.wsColor
-          Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutExpo } }
+          color: flashHudWindow.effectiveAccent
+          Behavior on width { NumberAnimation { duration: 110; easing.type: Easing.OutExpo } }
         }
         Rectangle {
           anchors.bottom: parent.bottom
           anchors.horizontalCenter: parent.horizontalCenter
           width: root.hudVisible ? parent.width * 0.88 : 0
           height: 2
-          color: root.wsColor
-          Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutExpo } }
+          color: flashHudWindow.effectiveAccent
+          Behavior on width { NumberAnimation { duration: 110; easing.type: Easing.OutExpo } }
         }
       }
 
-      // --- AMIGA style: translucent floating copper-bar ribbon (no dark box) ---
-      Column {
-        visible: root.hudStyle === "amiga"
+      // --- ARCADE: slanted neon speed-stripes ---
+      Row {
+        visible: root.hudStyle === "arcade"
         anchors.centerIn: parent
-        width: parent.width * 0.92
-        spacing: 3
-        opacity: 0.34
+        spacing: Style.space(18)
+        opacity: 0.85
         Repeater {
-          model: 7
+          model: 2
           Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * (1.0 - Math.abs(index - 3) * 0.08)
+            width: Style.space(180)
             height: 4
-            radius: 2
-            color: index === 3 ? root.wsColor : (index % 2 === 0 ? "#7dcfff" : "#bb9af7")
+            color: flashHudWindow.effectiveAccent
+            visible: false
           }
         }
+      }
+      Item {
+        visible: root.hudStyle === "arcade"
+        anchors.centerIn: parent
+        width: Math.min(parent.width, hudMainCol.implicitWidth + Style.space(120))
+        height: hudMainCol.implicitHeight + Style.space(24)
+        Rectangle {
+          anchors.top: parent.top; anchors.left: parent.left
+          width: root.hudVisible ? parent.width * 0.42 : 0; height: 4
+          color: flashHudWindow.effectiveAccent
+          Behavior on width { NumberAnimation { duration: 90; easing.type: Easing.OutExpo } }
+        }
+        Rectangle {
+          anchors.bottom: parent.bottom; anchors.right: parent.right
+          width: root.hudVisible ? parent.width * 0.42 : 0; height: 4
+          color: flashHudWindow.effectiveAccent
+          Behavior on width { NumberAnimation { duration: 90; easing.type: Easing.OutExpo } }
+        }
+      }
+
+      // --- CYBER: asymmetric edge ticks ---
+      Item {
+        visible: root.hudStyle === "cyber"
+        anchors.centerIn: parent
+        width: Math.min(parent.width, Math.max(Style.space(380), hudMainCol.implicitWidth + Style.space(80)))
+        height: hudMainCol.implicitHeight + Style.space(28)
+        Rectangle { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; width: 4; height: parent.height * 0.7; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 4; height: parent.height * 0.7; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: Style.space(64); height: 2; color: flashHudWindow.effectiveAccent }
+        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: Style.space(64); height: 2; color: flashHudWindow.effectiveAccent }
+      }
+
+      // --- RADAR: concentric expanding sonar rings ---
+      Item {
+        visible: root.hudStyle === "radar"
+        anchors.centerIn: parent
+        width: Style.space(220); height: Style.space(220)
+        Repeater {
+          model: 2
+          Rectangle {
+            anchors.centerIn: parent
+            width: root.hudVisible ? Style.space(140 + index * 90) : Style.space(20)
+            height: width
+            radius: width / 2
+            color: "transparent"
+            border.width: 1.5
+            border.color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.45 - index * 0.18)
+            Behavior on width { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
+          }
+        }
+      }
+
+      // --- SINE: animated 9-bar demoscene spectrum ---
+      Row {
+        visible: root.hudStyle === "sine"
+        anchors.centerIn: parent
+        spacing: Style.space(10)
+        opacity: 0.28
+        Repeater {
+          model: 9
+          Rectangle {
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(6)
+            height: Style.space(24) + (index % 3) * Style.space(18)
+            radius: 3
+            color: flashHudWindow.effectiveAccent
+            SequentialAnimation on height {
+              running: root.hudStyle === "sine" && root.hudVisible
+              loops: Animation.Infinite
+              NumberAnimation { to: Style.space(70 - Math.abs(index - 4) * 8); duration: 140 + index * 20 }
+              NumberAnimation { to: Style.space(18 + (index % 3) * 10); duration: 140 + index * 20 }
+            }
+          }
+        }
+      }
+
+      // --- BOSS: Souls-like filigree hairline + center diamond ---
+      Item {
+        visible: root.hudStyle === "boss"
+        anchors.centerIn: parent
+        width: parent.width * 0.82
+        height: hudMainCol.implicitHeight + Style.space(34)
+        Rectangle {
+          anchors.bottom: parent.bottom
+          anchors.horizontalCenter: parent.horizontalCenter
+          width: root.hudVisible ? parent.width : 0
+          height: 1.5
+          color: flashHudWindow.effectiveAccent
+          Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        }
+        Rectangle {
+          anchors.bottom: parent.bottom
+          anchors.bottomMargin: -4
+          anchors.horizontalCenter: parent.horizontalCenter
+          width: 9; height: 9
+          rotation: 45
+          color: flashHudWindow.effectiveAccent
+        }
+      }
+
+      // --- VHS: corner OSD stamp ---
+      Text {
+        visible: root.hudStyle === "vhs"
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.leftMargin: Style.space(48)
+        text: "▶ PLAY   00:" + (root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId))
+        color: flashHudWindow.effectiveAccent
+        font.family: Style.font.monoFamily || "monospace"
+        font.pixelSize: Style.font.body
+        font.bold: true
       }
 
       // Main HUD Content
@@ -611,22 +787,27 @@ BarWidget {
         id: hudMainCol
         anchors.centerIn: parent
         spacing: Style.space(6)
-        width: hudCard.width - Style.space(48)
+        width: flashHudWindow.allowOverflow ? implicitWidth : (hudCard.width - Style.space(48))
 
         // Telemetry micro-header
         Text {
           Layout.alignment: Qt.AlignHCenter
           text: {
             var wsStr = root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId)
-            if (root.hudStyle === "brutal") return ">>> WORKSPACE " + wsStr + " // LOCKED IN <<<"
-            if (root.hudStyle === "glitch") return "[// WS " + wsStr + " :: OVERRIDE //]"
-            if (root.hudStyle === "amiga") return ":: AMIGA-COPPER 0x" + wsStr + " ::"
+            if (root.hudStyle === "glitch") return ">>> WORKSPACE " + wsStr + " // LOCKED IN <<<"
+            if (root.hudStyle === "arcade") return "STAGE " + wsStr + " // READY!"
+            if (root.hudStyle === "cyber") return "SYS.NET // NODE_" + wsStr + " // ACTIVE"
+            if (root.hudStyle === "dos") return "C:\\OMARCHY\\WS_" + wsStr + "> [OK]"
+            if (root.hudStyle === "radar") return "+ TARGET ACQUIRED :: SECTOR " + wsStr + " +"
+            if (root.hudStyle === "sine") return "~~ DEMOSCENE :: WS " + wsStr + " ~~"
+            if (root.hudStyle === "boss") return "AREA " + wsStr
+            if (root.hudStyle === "vhs") return "CH-" + wsStr + " // SP"
             if (root.hudStyle === "laser") return "0x" + wsStr + " // VECTOR LOCK"
             return "RETICLE // WS " + wsStr
           }
-          color: root.wsColor
+          color: flashHudWindow.effectiveAccent
           font.family: Style.font.monoFamily || "monospace"
-          font.pixelSize: (root.hudStyle === "brutal" || root.hudStyle === "glitch") ? Style.font.body : Style.font.caption
+          font.pixelSize: (root.hudStyle === "glitch" || root.hudStyle === "arcade") ? Style.font.body : Style.font.caption
           font.bold: true
           font.letterSpacing: 2.5
         }
@@ -634,7 +815,7 @@ BarWidget {
         // Main Text Stack (transparent floating over everything)
         Item {
           Layout.alignment: Qt.AlignHCenter
-          implicitWidth: Math.min(hudMainCol.width, mainHudText.implicitWidth)
+          implicitWidth: flashHudWindow.allowOverflow ? mainHudText.implicitWidth : Math.min(hudMainCol.width, mainHudText.implicitWidth)
           implicitHeight: mainHudText.implicitHeight
 
           // Dark legibility shadow (all transparent styles)
@@ -645,91 +826,80 @@ BarWidget {
             text: mainHudText.text
             color: Qt.rgba(0, 0, 0, 0.85)
             font: mainHudText.font
-            elide: Text.ElideRight
+            elide: mainHudText.elide
           }
 
-          // Cyan RGB-split ghost (brutal & glitch)
+          // Cyan RGB-split ghost (glitch & vhs)
           Text {
-            visible: root.hudStyle === "brutal" || root.hudStyle === "glitch"
-            x: root.hudStyle === "glitch" ? -7 : -4
-            y: root.hudStyle === "glitch" ? -3 : -2
+            visible: root.hudStyle === "glitch" || root.hudStyle === "vhs"
+            x: root.hudStyle === "vhs" ? -3 : -4
+            y: root.hudStyle === "vhs" ? 0 : -2
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: mainHudText.text
             color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
             font: mainHudText.font
-            elide: Text.ElideRight
+            elide: mainHudText.elide
           }
 
-          // Magenta RGB-split ghost (brutal & glitch)
+          // Magenta RGB-split ghost (glitch & vhs)
           Text {
-            visible: root.hudStyle === "brutal" || root.hudStyle === "glitch"
-            x: root.hudStyle === "glitch" ? 7 : 4
-            y: root.hudStyle === "glitch" ? 3 : 2
+            visible: root.hudStyle === "glitch" || root.hudStyle === "vhs"
+            x: root.hudStyle === "vhs" ? 3 : 4
+            y: root.hudStyle === "vhs" ? 0 : 2
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: mainHudText.text
             color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
             font: mainHudText.font
-            elide: Text.ElideRight
+            elide: mainHudText.elide
           }
 
-          // Amiga vertical copper echo ghosts
+          // Accent shadow offset (arcade / cyber)
           Text {
-            visible: root.hudStyle === "amiga"
-            x: 0; y: -5
+            visible: root.hudStyle === "arcade" || root.hudStyle === "cyber"
+            x: 4; y: 4
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: mainHudText.text
-            color: Qt.rgba(0.49, 0.81, 1.0, 0.45)
+            color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.55)
             font: mainHudText.font
-            elide: Text.ElideRight
-          }
-          Text {
-            visible: root.hudStyle === "amiga"
-            x: 0; y: 5
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            text: mainHudText.text
-            color: Qt.rgba(0.73, 0.60, 0.97, 0.45)
-            font: mainHudText.font
-            elide: Text.ElideRight
-          }
-
-          // Extra 4-way glitch echoes
-          Text {
-            visible: root.hudStyle === "glitch"
-            x: -12; y: 1
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            text: mainHudText.text
-            color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.35)
-            font: mainHudText.font
-            elide: Text.ElideRight
+            elide: mainHudText.elide
           }
 
           Text {
             id: mainHudText
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
-            text: root.hudDisplayText.toUpperCase()
-            color: Color.foreground
+            text: {
+              var base = root.hudDisplayText.toUpperCase()
+              if (root.hudStyle === "dos") return base + " █"
+              return base
+            }
+            color: flashHudWindow.effectiveTextColor
             font.family: Style.font.monoFamily || "monospace"
             font.pixelSize: {
-              if (root.hudStyle === "brutal") return Style.space(64)
-              if (root.hudStyle === "glitch") return Style.space(52)
-              if (root.hudStyle === "amiga") return Style.space(42)
-              if (root.hudStyle === "laser") return Style.space(34)
-              return Style.space(26)
+              var basePx = 36
+              if (root.hudStyle === "glitch") basePx = 64
+              else if (root.hudStyle === "arcade") basePx = 56
+              else if (root.hudStyle === "cyber") basePx = 50
+              else if (root.hudStyle === "boss") basePx = 46
+              else if (root.hudStyle === "sine") basePx = 44
+              else if (root.hudStyle === "vhs") basePx = 44
+              else if (root.hudStyle === "radar") basePx = 40
+              else if (root.hudStyle === "dos") basePx = 38
+              else if (root.hudStyle === "laser") basePx = 34
+              else basePx = 28
+              return Math.round(Style.space(basePx) * flashHudWindow.sizeMult)
             }
-            font.bold: true
+            font.bold: root.hudStyle !== "boss"
             font.letterSpacing: {
-              if (root.hudStyle === "brutal") return 3
+              if (root.hudStyle === "boss") return 6
               if (root.hudStyle === "laser") return 4.5
-              if (root.hudStyle === "glitch") return 2
-              return 1.5
+              if (root.hudStyle === "glitch") return 3
+              return 1.8
             }
-            elide: Text.ElideRight
+            elide: flashHudWindow.allowOverflow ? Text.ElideNone : Text.ElideRight
           }
         }
       }

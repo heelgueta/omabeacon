@@ -18,8 +18,10 @@ Item {
   readonly property string cliPath: Qt.resolvedUrl("bin/omabeacon").toString().replace(/^file:\/\//, "")
 
   readonly property var fxModes: ["clean", "pulse", "copper", "scramble", "marquee", "stealth"]
-  readonly property var hudStyles: ["wire", "laser", "amiga", "glitch", "brutal"]
+  readonly property var hudStyles: ["glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "boss", "vhs"]
   readonly property var hudPositions: ["top", "center", "bottom"]
+  readonly property var hudSizes: ["sm", "md", "lg", "xl", "xxl", "mega"]
+  readonly property var hudColorFxs: ["low", "mid", "high", "flare"]
   readonly property var palette: [
     "#7aa2f7", // 1: electric blue
     "#bb9af7", // 2: neon violet
@@ -37,8 +39,10 @@ Item {
   property string selectedColor: ""
   property var workspacesData: ({})
   property string fxMode: "clean"
-  property string hudStyle: "brutal"
+  property string hudStyle: "glitch"
   property string hudPos: "center"
+  property string hudSize: "md"
+  property string hudColorFx: "mid"
   property bool autoSense: true
   property bool flashHud: true
   property string sensedSummary: ""
@@ -139,8 +143,12 @@ Item {
       var data = JSON.parse(txt)
       root.workspacesData = data.workspaces || ({})
       root.fxMode = data.fx || "clean"
-      root.hudStyle = data.hudStyle || "brutal"
+      var st = data.hudStyle || "glitch"
+      if (st === "brutal") st = "glitch"
+      root.hudStyle = st
       root.hudPos = data.hudPos || "center"
+      root.hudSize = data.hudSize || "md"
+      root.hudColorFx = data.hudColorFx || "mid"
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
@@ -182,7 +190,7 @@ Item {
       // Main card
       Rectangle {
         id: card
-        width: Math.min(Style.space(540), parent.width - Style.gapsOut * 2)
+        width: Math.min(Style.space(600), parent.width - Style.gapsOut * 2)
         height: cardCol.implicitHeight + Style.space(32)
         anchors.centerIn: parent
         radius: Style.cornerRadius
@@ -401,12 +409,14 @@ Item {
             color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.1)
           }
 
-          // HUD Style selector (clicking triggers live demo)
+          // HUD Style selector (10 styles, wrapping flow, clicking triggers live demo)
           RowLayout {
             Layout.fillWidth: true
             spacing: Style.space(6)
 
             Text {
+              Layout.alignment: Qt.AlignTop
+              Layout.topMargin: Style.space(4)
               text: "HUD FX"
               color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
               font.family: root.monoFamily
@@ -414,21 +424,74 @@ Item {
               font.bold: true
             }
 
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(5)
+
+              Repeater {
+                model: root.hudStyles
+                delegate: Rectangle {
+                  readonly property bool active: root.hudStyle === modelData
+                  radius: Style.space(4)
+                  color: active
+                    ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                  border.width: 1
+                  border.color: active ? root.activeAccent : "transparent"
+                  width: hudStyleLabel.implicitWidth + Style.space(10)
+                  height: Style.space(22)
+
+                  Text {
+                    id: hudStyleLabel
+                    anchors.centerIn: parent
+                    text: modelData
+                    color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                    font.family: root.monoFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: active
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      Quickshell.execDetached([root.cliPath, "hudstyle", modelData, "--demo"])
+                      noteInput.forceActiveFocus()
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // HUD Size selector (sm | md | lg | xl | xxl | mega)
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
+            Text {
+              text: "SIZE"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
             Repeater {
-              model: root.hudStyles
+              model: root.hudSizes
               delegate: Rectangle {
-                readonly property bool active: root.hudStyle === modelData
+                readonly property bool active: root.hudSize === modelData
                 radius: Style.space(4)
                 color: active
                   ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
                   : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
-                implicitWidth: hudStyleLabel.implicitWidth + Style.space(10)
+                implicitWidth: hudSizeLabel.implicitWidth + Style.space(10)
                 implicitHeight: Style.space(22)
 
                 Text {
-                  id: hudStyleLabel
+                  id: hudSizeLabel
                   anchors.centerIn: parent
                   text: modelData
                   color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
@@ -441,7 +504,7 @@ Item {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
                   onClicked: {
-                    Quickshell.execDetached([root.cliPath, "hudstyle", modelData, "--demo"])
+                    Quickshell.execDetached([root.cliPath, "hudsize", modelData, "--demo"])
                     noteInput.forceActiveFocus()
                   }
                 }
@@ -451,10 +514,45 @@ Item {
             Item { Layout.fillWidth: true }
 
             Text {
-              text: "click = demo"
-              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
+              text: "COLOR"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
               font.family: root.monoFamily
               font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Repeater {
+              model: root.hudColorFxs
+              delegate: Rectangle {
+                readonly property bool active: root.hudColorFx === modelData
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+                implicitWidth: hudCfxLabel.implicitWidth + Style.space(10)
+                implicitHeight: Style.space(22)
+
+                Text {
+                  id: hudCfxLabel
+                  anchors.centerIn: parent
+                  text: modelData
+                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: active
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    Quickshell.execDetached([root.cliPath, "hudcolor", modelData, "--demo"])
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
             }
           }
 
