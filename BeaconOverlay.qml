@@ -98,11 +98,20 @@ Item {
   property string paletteName: "tokyo"
   property string glyphPos: "above"
   property string currentKeybind: "SUPER + N"
+  property bool extraKeys: true
   property bool editingKeybind: false
   property bool glyphPickerOpen: false
   property string glyphTab: "all"
   property string glyphFilter: ""
   property var emojiList: []
+  property bool vaultMode: false
+  property bool slotPickerOpen: false
+  property var vaultItems: []
+  property var vaultOccupied: []
+  property var vaultFree: []
+  property int vaultIndex: 0
+  property string pendingThawId: ""
+  property int pendingOrigWs: 1
   property bool autoSense: true
   property bool flashHud: true
   property string sensedSummary: ""
@@ -124,6 +133,16 @@ Item {
   function open(payloadJson) {
     loadState()
     root.glyphPickerOpen = false
+    root.slotPickerOpen = false
+    openModeWatcher.reload()
+    var modeTxt = (openModeWatcher.text() || "").trim()
+    if (modeTxt === "vault") {
+      Quickshell.execDetached(["rm", "-f", root.home + "/.local/state/omarchy/omabeacon/open_mode"])
+      openVault()
+      root.opened = true
+      return
+    }
+    root.vaultMode = false
     var ws = (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id) ? Hyprland.focusedWorkspace.id : 1
     selectWorkspace(ws)
     root.opened = true
@@ -131,6 +150,33 @@ Item {
       noteInput.forceActiveFocus()
       noteInput.selectAll()
     })
+  }
+
+  function openVault() {
+    root.vaultMode = true
+    root.slotPickerOpen = false
+    root.vaultIndex = 0
+    refreshVault()
+    Qt.callLater(function() { vaultKeyCatcher.forceActiveFocus() })
+  }
+
+  function refreshVault() {
+    if (vaultListProc.running) vaultListProc.running = false
+    vaultListProc.buf = ""
+    vaultListProc.command = [root.cliPath, "vault-list"]
+    vaultListProc.running = true
+  }
+
+  function attemptThaw(vid, targetWs) {
+    if (!vid || thawProc.running) return
+    thawProc.buf = ""
+    var cmd = [root.cliPath, "thaw", vid]
+    if (targetWs > 0) {
+      cmd.push("--ws")
+      cmd.push(String(targetWs))
+    }
+    thawProc.command = cmd
+    thawProc.running = true
   }
 
   function close() {
@@ -214,6 +260,7 @@ Item {
       root.paletteName = data.palette || "tokyo"
       root.glyphPos = data.glyphPos || "above"
       root.currentKeybind = data.keybind || "SUPER + N"
+      root.extraKeys = (data.extraKeys === undefined) ? true : !!data.extraKeys
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
@@ -282,6 +329,57 @@ Item {
     }
   }
 
+  FileView {
+    id: openModeWatcher
+    path: root.home + "/.local/state/omarchy/omabeacon/open_mode"
+  }
+
+  Process {
+    id: vaultListProc
+    property string buf: ""
+    stdout: SplitParser {
+      onRead: data => { vaultListProc.buf += data }
+    }
+    onExited: (code) => {
+      if (code === 0 && vaultListProc.buf.trim() !== "") {
+        try {
+          var d = JSON.parse(vaultListProc.buf)
+          root.vaultItems = d.items || []
+          root.vaultOccupied = d.occupied || []
+          root.vaultFree = d.free || []
+          if (root.vaultIndex >= root.vaultItems.length) {
+            root.vaultIndex = Math.max(0, root.vaultItems.length - 1)
+          }
+        } catch (e) {}
+      }
+      vaultListProc.buf = ""
+    }
+  }
+
+  Process {
+    id: thawProc
+    property string buf: ""
+    stdout: SplitParser {
+      onRead: data => { thawProc.buf += data }
+    }
+    onExited: (code) => {
+      if (code === 2) {
+        try {
+          var d = JSON.parse(thawProc.buf)
+          root.vaultFree = d.free || []
+          root.vaultOccupied = d.occupied || []
+          root.pendingOrigWs = d.origWs || 1
+          root.slotPickerOpen = true
+          Qt.callLater(function() { vaultKeyCatcher.forceActiveFocus() })
+        } catch (e) {}
+      } else if (code === 0) {
+        root.slotPickerOpen = false
+        root.dismiss()
+      }
+      thawProc.buf = ""
+    }
+  }
+
   Process {
     id: senseProc
     property string buf: ""
@@ -347,6 +445,7 @@ Item {
       // Main card
       Rectangle {
         id: card
+        visible: !root.vaultMode
         width: Math.min(Style.space(900), parent.width - Style.gapsOut * 2)
         height: cardCol.implicitHeight + Style.space(44)
         anchors.centerIn: parent
@@ -385,6 +484,32 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            // Open Cryo Vault (Stasis Wheel) button
+            Rectangle {
+              radius: Style.space(4)
+              color: Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.16)
+              border.width: 1
+              border.color: root.activeAccent
+              implicitWidth: vaultBtnTxt.implicitWidth + Style.space(14)
+              implicitHeight: Style.space(26)
+
+              Text {
+                id: vaultBtnTxt
+                anchors.centerIn: parent
+                text: "❄ Vault (F12)"
+                color: root.activeAccent
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.openVault()
+              }
+            }
 
             // Fill from local sense button
             Rectangle {
@@ -1051,6 +1176,36 @@ Item {
               }
             }
 
+            // Extra 11-20 (F1-F10) + F11/F12 keybindings toggle
+            Rectangle {
+              radius: Style.space(4)
+              color: root.extraKeys
+                ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.22)
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+              border.width: 1
+              border.color: root.extraKeys ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+              implicitWidth: extraLabel.implicitWidth + Style.space(14)
+              implicitHeight: Style.space(26)
+
+              Text {
+                id: extraLabel
+                anchors.centerIn: parent
+                text: "⌨ F1–F10 (11–20): " + (root.extraKeys ? "ON" : "OFF")
+                color: root.extraKeys ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.65)
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  Quickshell.execDetached([root.cliPath, "extrakeys", "toggle"])
+                  noteInput.forceActiveFocus()
+                }
+              }
+            }
+
             Item { Layout.fillWidth: true }
 
             // Reset visual/HUD settings to defaults (preserves workspace notes)
@@ -1391,6 +1546,428 @@ Item {
                   Quickshell.execDetached([root.cliPath, "glyph", String(root.editWsId), glyph, "--demo"])
                   root.glyphPickerOpen = false
                   noteInput.forceActiveFocus()
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // --- STASIS WHEEL (Cryo Vault) ---
+      Rectangle {
+        id: vaultCard
+        visible: root.vaultMode
+        width: Math.min(Style.space(1180), parent.width - Style.gapsOut * 2)
+        height: Math.min(Style.space(660), parent.height - Style.gapsOut * 2)
+        anchors.centerIn: parent
+        radius: Style.cornerRadius
+        color: Qt.rgba(0.03, 0.03, 0.05, 0.96)
+        border.width: 2
+        border.color: vaultCard.selColor
+
+        readonly property var selItem: (root.vaultItems.length > 0 && root.vaultIndex >= 0 && root.vaultIndex < root.vaultItems.length)
+          ? root.vaultItems[root.vaultIndex]
+          : null
+        readonly property color selColor: (selItem && selItem.color) ? selItem.color : root.activeAccent
+
+        MouseArea { anchors.fill: parent }
+
+        // Keyboard controller for Stasis Wheel & Slot Picker
+        Item {
+          id: vaultKeyCatcher
+          focus: root.opened && root.vaultMode
+          Keys.onPressed: function(event) {
+            if (root.slotPickerOpen) {
+              var picked = -1
+              if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) picked = event.key - Qt.Key_0
+              else if (event.key === Qt.Key_0) picked = 10
+              else if (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F10) picked = 11 + (event.key - Qt.Key_F1)
+
+              if (picked > 0) {
+                event.accepted = true
+                if (root.vaultFree.indexOf(picked) !== -1) {
+                  root.attemptThaw(root.pendingThawId, picked)
+                }
+                return
+              }
+              if (event.key === Qt.Key_Escape) {
+                event.accepted = true
+                root.slotPickerOpen = false
+                return
+              }
+              return
+            }
+
+            if (event.key === Qt.Key_Escape) {
+              event.accepted = true
+              root.dismiss()
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
+              event.accepted = true
+              if (root.vaultItems.length > 0) {
+                root.vaultIndex = (root.vaultIndex - 1 + root.vaultItems.length) % root.vaultItems.length
+              }
+            } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+              event.accepted = true
+              if (root.vaultItems.length > 0) {
+                root.vaultIndex = (root.vaultIndex + 1) % root.vaultItems.length
+              }
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              event.accepted = true
+              if (vaultCard.selItem) {
+                root.pendingThawId = vaultCard.selItem.id
+                root.attemptThaw(vaultCard.selItem.id, 0)
+              }
+            } else if (event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) {
+              event.accepted = true
+              if (vaultCard.selItem) {
+                Quickshell.execDetached([root.cliPath, "vault-delete", vaultCard.selItem.id])
+                Qt.callLater(root.refreshVault)
+              }
+            } else if (event.key === Qt.Key_F11) {
+              event.accepted = true
+              Quickshell.execDetached([root.cliPath, "freeze"])
+              root.dismiss()
+            }
+          }
+        }
+
+        ColumnLayout {
+          anchors.fill: parent
+          anchors.margins: Style.space(22)
+          spacing: Style.space(14)
+
+          // Vault Header
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(12)
+
+            Text {
+              text: ">>> STASIS VAULT // CRYO-FROZEN WORKSPACES <<<"
+              color: vaultCard.selColor
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.heading || 18
+              font.bold: true
+              font.letterSpacing: 2.0
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Rectangle {
+              radius: Style.space(4)
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+              implicitWidth: backBtnLbl.implicitWidth + Style.space(14)
+              implicitHeight: Style.space(28)
+              Text {
+                id: backBtnLbl
+                anchors.centerIn: parent
+                text: "← Edit Mode"
+                color: root.foreground
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  root.vaultMode = false
+                  Qt.callLater(function() { noteInput.forceActiveFocus() })
+                }
+              }
+            }
+          }
+
+          // Empty vault message
+          Item {
+            visible: root.vaultItems.length === 0
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Column {
+              anchors.centerIn: parent
+              spacing: Style.space(10)
+              Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "NO CRYO-FROZEN WORKSPACES"
+                color: vaultCard.selColor
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.heading || 22
+                font.bold: true
+              }
+              Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Press SUPER + F11 on any occupied workspace to freeze & free its slot."
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.65)
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.body
+              }
+            }
+          }
+
+          // Split View: Left Screenshot Preview + Right Arcade Wheel
+          RowLayout {
+            visible: root.vaultItems.length > 0 && !root.slotPickerOpen
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: Style.space(20)
+
+            // LEFT: Visual Preview & Manifest
+            ColumnLayout {
+              Layout.preferredWidth: vaultCard.width * 0.44
+              Layout.fillHeight: true
+              spacing: Style.space(12)
+
+              Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: Style.cornerRadius
+                clip: true
+                color: Qt.rgba(0, 0, 0, 0.65)
+                border.width: 2
+                border.color: vaultCard.selColor
+
+                Image {
+                  anchors.fill: parent
+                  anchors.margins: 2
+                  source: (vaultCard.selItem && vaultCard.selItem.thumb) ? ("file://" + vaultCard.selItem.thumb) : ""
+                  fillMode: Image.PreserveAspectFit
+                  asynchronous: true
+                }
+
+                // Subtle CRT scanlines over preview
+                Column {
+                  anchors.fill: parent
+                  spacing: 3
+                  opacity: 0.18
+                  Repeater {
+                    model: 80
+                    Rectangle { width: parent.width; height: 1; color: "#000000" }
+                  }
+                }
+              }
+
+              // Manifest info
+              Text {
+                Layout.fillWidth: true
+                text: vaultCard.selItem
+                  ? ("ORIG WS " + vaultCard.selItem.origWs + "  ·  " + vaultCard.selItem.windowCount + " WINDOWS  ·  " + (vaultCard.selItem.summary || ""))
+                  : ""
+                color: vaultCard.selColor
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.bodySmall || Style.font.caption
+                font.bold: true
+                elide: Text.ElideRight
+              }
+
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(10)
+
+                Rectangle {
+                  radius: Style.space(4)
+                  color: Qt.rgba(vaultCard.selColor.r, vaultCard.selColor.g, vaultCard.selColor.b, 0.25)
+                  border.width: 1
+                  border.color: vaultCard.selColor
+                  implicitWidth: thawBtnLbl.implicitWidth + Style.space(18)
+                  implicitHeight: Style.space(32)
+                  Text {
+                    id: thawBtnLbl
+                    anchors.centerIn: parent
+                    text: "[ENTER] THAW"
+                    color: vaultCard.selColor
+                    font.family: root.monoFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                  }
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      if (vaultCard.selItem) {
+                        root.pendingThawId = vaultCard.selItem.id
+                        root.attemptThaw(vaultCard.selItem.id, 0)
+                      }
+                    }
+                  }
+                }
+
+                Rectangle {
+                  radius: Style.space(4)
+                  color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+                  implicitWidth: purgeBtnLbl.implicitWidth + Style.space(14)
+                  implicitHeight: Style.space(32)
+                  Text {
+                    id: purgeBtnLbl
+                    anchors.centerIn: parent
+                    text: "[DEL] PURGE"
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                    font.family: root.monoFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      if (vaultCard.selItem) {
+                        Quickshell.execDetached([root.cliPath, "vault-delete", vaultCard.selItem.id])
+                        Qt.callLater(root.refreshVault)
+                      }
+                    }
+                  }
+                }
+
+                Item { Layout.fillWidth: true }
+              }
+            }
+
+            // RIGHT: Glitchy Arcade Wheel
+            Item {
+              Layout.fillWidth: true
+              Layout.fillHeight: true
+              clip: true
+
+              ListView {
+                id: wheelList
+                anchors.fill: parent
+                model: root.vaultItems
+                currentIndex: root.vaultIndex
+                preferredHighlightBegin: height * 0.36
+                preferredHighlightEnd: height * 0.64
+                highlightRangeMode: ListView.StrictlyEnforceRange
+                highlightMoveDuration: 140
+                spacing: Style.space(14)
+
+                delegate: Item {
+                  readonly property bool selected: index === root.vaultIndex
+                  readonly property color itemCol: modelData.color || root.activeAccent
+                  readonly property string itemTitle: ((modelData.glyph ? modelData.glyph + " " : "") + (modelData.note || "UNTITLED")).toUpperCase()
+                  width: wheelList.width
+                  height: selected ? Style.space(86) : Style.space(52)
+                  opacity: selected ? 1.0 : Math.max(0.22, 0.72 - Math.abs(index - root.vaultIndex) * 0.18)
+
+                  Behavior on opacity { NumberAnimation { duration: 120 } }
+
+                  // Cyan & Magenta RGB-split ghosts on selected arcade wheel item
+                  Text {
+                    visible: selected
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: -4; y: -2
+                    width: parent.width - Style.space(12)
+                    text: itemTitle
+                    color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
+                    font.family: root.monoFamily
+                    font.pixelSize: Style.space(34)
+                    font.bold: true
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    visible: selected
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: 4; y: 2
+                    width: parent.width - Style.space(12)
+                    text: itemTitle
+                    color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
+                    font.family: root.monoFamily
+                    font.pixelSize: Style.space(34)
+                    font.bold: true
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: selected ? 0 : Style.space(18)
+                    width: parent.width - Style.space(24)
+                    text: itemTitle
+                    color: selected ? Color.foreground : itemCol
+                    font.family: root.monoFamily
+                    font.pixelSize: selected ? Style.space(34) : Style.space(20)
+                    font.bold: true
+                    font.letterSpacing: selected ? 2.5 : 1.0
+                    elide: Text.ElideRight
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      if (selected) {
+                        root.pendingThawId = modelData.id
+                        root.attemptThaw(modelData.id, 0)
+                      } else {
+                        root.vaultIndex = index
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // SLOT PICKER (shown when origWs is occupied!)
+          ColumnLayout {
+            visible: root.slotPickerOpen
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: Style.space(16)
+
+            Text {
+              Layout.alignment: Qt.AlignHCenter
+              text: root.vaultFree.length > 0
+                ? ("⚠ WS " + root.pendingOrigWs + " IS OCCUPIED // PRESS 1–0 OR F1–F10 FOR AN EMPTY SLOT")
+                : "⚠ ALL 20 WORKSPACES ARE OCCUPIED // CLOSE ONE OR FORCE INTO CURRENT WS"
+              color: "#f7768e"
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.heading || 18
+              font.bold: true
+            }
+
+            GridLayout {
+              Layout.fillWidth: true
+              Layout.fillHeight: true
+              columns: 5
+              columnSpacing: Style.space(12)
+              rowSpacing: Style.space(12)
+
+              Repeater {
+                model: 20
+                delegate: Rectangle {
+                  readonly property int wsNum: index + 1
+                  readonly property bool isFree: root.vaultFree.indexOf(wsNum) !== -1
+                  readonly property string keyHint: wsNum <= 9 ? String(wsNum) : (wsNum === 10 ? "0" : ("F" + (wsNum - 10)))
+                  Layout.fillWidth: true
+                  Layout.fillHeight: true
+                  radius: Style.space(6)
+                  color: isFree
+                    ? Qt.rgba(vaultCard.selColor.r, vaultCard.selColor.g, vaultCard.selColor.b, 0.18)
+                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.04)
+                  border.width: isFree ? 2 : 1
+                  border.color: isFree ? vaultCard.selColor : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                  opacity: isFree ? 1.0 : 0.35
+
+                  Column {
+                    anchors.centerIn: parent
+                    spacing: Style.space(4)
+                    Text {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      text: "WS " + wsNum
+                      color: isFree ? vaultCard.selColor : root.foreground
+                      font.family: root.monoFamily
+                      font.pixelSize: Style.font.heading || 18
+                      font.bold: true
+                    }
+                    Text {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      text: isFree ? ("[" + keyHint + "] FREE") : "OCCUPIED"
+                      color: isFree ? Color.foreground : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+                      font.family: root.monoFamily
+                      font.pixelSize: Style.font.caption
+                    }
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    enabled: isFree
+                    cursorShape: isFree ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.attemptThaw(root.pendingThawId, wsNum)
+                  }
                 }
               }
             }

@@ -159,7 +159,8 @@ BarWidget {
       root.triggerScramble(root.rawDisplayNote)
       if (root.autoSense) senseDebounce.restart()
       if (shouldDemo) {
-        var demoTxt = root.rawDisplayNote !== "" ? root.rawDisplayNote : ("DEMO // WORKSPACE " + root.activeWsId)
+        var ovr = data.hudOverrideText ? String(data.hudOverrideText) : ""
+        var demoTxt = ovr !== "" ? ovr : (root.rawDisplayNote !== "" ? root.rawDisplayNote : ("DEMO // WORKSPACE " + root.activeWsId))
         root.triggerHud(root.activeWsId, demoTxt, true)
       }
     } catch (e) {}

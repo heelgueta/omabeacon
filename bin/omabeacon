@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,8 @@ from pathlib import Path
 
 STATE_DIR = Path.home() / ".local" / "state" / "omarchy" / "omabeacon"
 STATE_FILE = STATE_DIR / "state.json"
+VAULT_DIR = STATE_DIR / "vault"
+OPEN_MODE_FILE = STATE_DIR / "open_mode"
 
 VALID_FX = ("scramble",)
 VALID_HUD_STYLES = ("glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "vhs")
@@ -66,7 +69,10 @@ def default_state() -> dict:
         "palette": "tokyo",
         "glyphPos": "above",
         "keybind": "SUPER + N",
+        "extraKeys": True,
         "hudPreviewSeq": 0,
+        "hudOverrideText": "",
+        "hudOverrideColor": "",
         "workspaces": {},
     }
 
@@ -96,7 +102,10 @@ def load_state() -> dict:
     base["palette"] = data.get("palette") if data.get("palette") in PALETTES else "tokyo"
     base["glyphPos"] = data.get("glyphPos") if data.get("glyphPos") in VALID_GLYPH_POS else "above"
     base["keybind"] = str(data.get("keybind") or "SUPER + N")
+    base["extraKeys"] = True if "extraKeys" not in data else bool(data.get("extraKeys"))
     base["hudPreviewSeq"] = int(data.get("hudPreviewSeq", 0))
+    base["hudOverrideText"] = str(data.get("hudOverrideText") or "")
+    base["hudOverrideColor"] = str(data.get("hudOverrideColor") or "")
     ws = data.get("workspaces")
     base["workspaces"] = ws if isinstance(ws, dict) else {}
     return base
@@ -287,6 +296,263 @@ def sense_workspace(ws_id: int | None = None) -> dict:
     }
 
 
+EXTRA_KEYS_BEGIN = "-- BEGIN omabeacon-extra-keys"
+EXTRA_KEYS_END = "-- END omabeacon-extra-keys"
+
+RELAUNCH_TUIS = {"nvim", "vim", "vi", "hx", "lazygit", "btop", "htop", "yazi", "ranger", "less", "man"}
+
+
+def apply_extra_keys(enabled: bool) -> None:
+    if not BINDINGS_FILE.exists():
+        return
+    txt = BINDINGS_FILE.read_text(encoding="utf-8")
+    pattern = re.compile(
+        re.escape(EXTRA_KEYS_BEGIN) + r".*?" + re.escape(EXTRA_KEYS_END) + r"\n?",
+        re.DOTALL,
+    )
+    txt = re.sub(pattern, "", txt).rstrip() + "\n"
+    if enabled:
+        cli_bin = str(Path.home() / ".local" / "bin" / "omabeacon")
+        lines = [EXTRA_KEYS_BEGIN]
+        for idx in range(1, 11):
+            ws = 10 + idx
+            lines.append(f'o.bind("SUPER + F{idx}", "Workspace {ws}", "hyprctl dispatch workspace {ws}")')
+        for idx in range(1, 11):
+            ws = 10 + idx
+            lines.append(f'o.bind("SUPER + SHIFT + F{idx}", "Move to workspace {ws}", "hyprctl dispatch movetoworkspace {ws}")')
+        lines.append(f'o.bind("SUPER + F11", "Cryo-freeze workspace", "{cli_bin} freeze")')
+        lines.append(f'o.bind("SUPER + F12", "Open Cryo Vault", "{cli_bin} vault")')
+        lines.append(EXTRA_KEYS_END)
+        txt = txt + "\n" + "\n".join(lines) + "\n"
+    BINDINGS_FILE.write_text(txt, encoding="utf-8")
+    subprocess.run(["hyprctl", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def read_proc_cmdline(pid: int) -> list[str]:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return [x.decode("utf-8", errors="replace") for x in raw.split(b"\x00") if x]
+    except OSError:
+        return []
+
+
+def read_proc_cwd_full(pid: int) -> str:
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return str(Path.home())
+
+
+def deepest_pid(root_pid: int, max_depth: int = 4) -> int:
+    cur = root_pid
+    for _ in range(max_depth):
+        kids = read_children(cur)
+        if not kids:
+            break
+        cur = kids[-1]
+    return cur
+
+
+def get_clients() -> list[dict]:
+    try:
+        out = subprocess.check_output(
+            ["hyprctl", "clients", "-j"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+        )
+        return json.loads(out)
+    except Exception:
+        return []
+
+
+def occupied_workspaces(clients: list[dict] | None = None) -> list[int]:
+    if clients is None:
+        clients = get_clients()
+    occ = sorted({
+        int(c.get("workspace", {}).get("id", 0))
+        for c in clients
+        if 1 <= int(c.get("workspace", {}).get("id", 0)) <= 20
+    })
+    return occ
+
+
+def build_relaunch_cmd(client: dict) -> dict:
+    cls = (client.get("class") or client.get("initialClass") or "").strip()
+    cls_low = cls.lower()
+    pid = int(client.get("pid") or 0)
+    title = (client.get("title") or "").strip()
+
+    if cls_low in TERMINAL_CLASSES and pid > 0:
+        deep = deepest_pid(pid)
+        cwd = read_proc_cwd_full(deep) or read_proc_cwd_full(pid)
+        comm = read_proc_comm(deep)
+        cmd_parts = read_proc_cmdline(deep)
+        term_bin = cls_low.split(".")[-1]
+        if term_bin == "footclient":
+            term_bin = "foot"
+        if comm in RELAUNCH_TUIS and cmd_parts:
+            inner = " ".join(shlex.quote(p) for p in cmd_parts)
+            if term_bin == "alacritty":
+                launch = f"alacritty --working-directory {shlex.quote(cwd)} -e sh -lc {shlex.quote(inner)}"
+            elif term_bin == "kitty":
+                launch = f"kitty --directory {shlex.quote(cwd)} sh -lc {shlex.quote(inner)}"
+            elif term_bin == "ghostty":
+                launch = f"ghostty --working-directory={shlex.quote(cwd)} -e sh -lc {shlex.quote(inner)}"
+            else:
+                launch = f"{term_bin} -e sh -lc {shlex.quote(f'cd {shlex.quote(cwd)} && {inner}')}"
+        else:
+            if term_bin == "alacritty":
+                launch = f"alacritty --working-directory {shlex.quote(cwd)}"
+            elif term_bin == "kitty":
+                launch = f"kitty --directory {shlex.quote(cwd)}"
+            elif term_bin == "ghostty":
+                launch = f"ghostty --working-directory={shlex.quote(cwd)}"
+            elif term_bin == "foot":
+                launch = f"foot --working-directory={shlex.quote(cwd)}"
+            else:
+                launch = term_bin
+        return {"kind": "term", "class": cls, "title": title, "cwd": cwd, "comm": comm, "exec": launch}
+
+    cmd_parts = read_proc_cmdline(pid) if pid > 0 else []
+    launch = " ".join(shlex.quote(p) for p in cmd_parts) if cmd_parts else cls_low
+    return {"kind": "app", "class": cls, "title": title, "cwd": "", "comm": cls_low, "exec": launch}
+
+
+def list_vault() -> dict:
+    VAULT_DIR.mkdir(parents=True, exist_ok=True)
+    items: list[dict] = []
+    for jf in sorted(VAULT_DIR.glob("*.json"), reverse=True):
+        try:
+            d = json.loads(jf.read_text(encoding="utf-8"))
+            items.append(d)
+        except Exception:
+            continue
+    clients = get_clients()
+    occ = occupied_workspaces(clients)
+    free = [i for i in range(1, 21) if i not in occ]
+    return {"items": items, "occupied": occ, "free": free}
+
+
+def freeze_workspace(state: dict) -> dict:
+    ws_id = active_workspace_id()
+    clients = [c for c in get_clients() if c.get("workspace", {}).get("id") == ws_id]
+    if not clients:
+        state["hudOverrideText"] = f"WS {ws_id} IS EMPTY"
+        state["hudOverrideColor"] = ""
+        state["flashHud"] = True
+        state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return {"status": "empty", "workspace": ws_id}
+
+    VAULT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = int(time.time() * 1000)
+    vid = f"ws{ws_id}-{stamp}"
+    thumb_path = VAULT_DIR / f"{vid}.png"
+    meta_path = VAULT_DIR / f"{vid}.json"
+
+    # Capture crisp scaled screenshot before closing windows
+    subprocess.run(
+        ["grim", "-s", "0.45", str(thumb_path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=3.0,
+    )
+
+    ws_key = str(ws_id)
+    ws_entry = state.get("workspaces", {}).get(ws_key, {})
+    sensed = sense_workspace(ws_id)
+    note = ws_entry.get("note") or sensed.get("summary") or f"WORKSPACE {ws_id}"
+    color = ws_entry.get("color") or PALETTES.get(state.get("palette", "tokyo"), PALETTES["tokyo"])[(ws_id - 1) % 10]
+    glyph = ws_entry.get("glyph") or ""
+
+    windows = [build_relaunch_cmd(c) for c in clients]
+    payload = {
+        "id": vid,
+        "origWs": ws_id,
+        "note": note,
+        "color": color,
+        "glyph": glyph,
+        "summary": sensed.get("summary") or "",
+        "windowCount": len(windows),
+        "windows": windows,
+        "thumb": str(thumb_path) if thumb_path.exists() else "",
+        "frozenAt": int(time.time()),
+    }
+    meta_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    # Close all windows on this workspace
+    for c in clients:
+        addr = c.get("address")
+        if addr:
+            subprocess.run(["hyprctl", "dispatch", "closewindow", f"address:{addr}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Clear workspace slot note so it is freshly available
+    state.get("workspaces", {}).pop(ws_key, None)
+    state["hudOverrideText"] = f"❄ CRYO-FROZEN // {note}"
+    state["hudOverrideColor"] = color
+    state["flashHud"] = True
+    state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+    save_state(state)
+    return {"status": "frozen", "id": vid, "origWs": ws_id}
+
+
+def thaw_workspace(state: dict, vid: str, target_ws: int | None, keep: bool) -> tuple[int, dict]:
+    meta_path = VAULT_DIR / f"{vid}.json"
+    if not meta_path.exists():
+        return 1, {"status": "not_found", "id": vid}
+    payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    orig_ws = int(payload.get("origWs", 1))
+    clients = get_clients()
+    occ = occupied_workspaces(clients)
+    free = [i for i in range(1, 21) if i not in occ]
+
+    if target_ws is None:
+        if orig_ws not in occ:
+            target_ws = orig_ws
+        else:
+            return 2, {"status": "occupied", "origWs": orig_ws, "free": free, "occupied": occ}
+
+    # Switch to target workspace and restore omabeacon metadata
+    subprocess.run(["hyprctl", "dispatch", "workspace", str(target_ws)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    entry: dict = {
+        "note": payload.get("note", f"WS {target_ws}"),
+        "color": payload.get("color", ""),
+        "updatedAt": int(time.time()),
+    }
+    if payload.get("glyph"):
+        entry["glyph"] = payload["glyph"]
+    if not entry["color"]:
+        entry.pop("color", None)
+    state.setdefault("workspaces", {})[str(target_ws)] = entry
+
+    for win in payload.get("windows", []):
+        cmd = win.get("exec")
+        if cmd:
+            subprocess.run(
+                ["hyprctl", "dispatch", "exec", f"[workspace {target_ws} silent] {cmd}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+    if not keep:
+        thumb = payload.get("thumb")
+        if thumb:
+            try:
+                Path(thumb).unlink(missing_ok=True)
+            except OSError:
+                pass
+        meta_path.unlink(missing_ok=True)
+
+    state["hudOverrideText"] = f"⚡ THAWED -> WS {target_ws} // {entry['note']}"
+    state["hudOverrideColor"] = entry.get("color", "")
+    state["flashHud"] = True
+    state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+    save_state(state)
+    return 0, {"status": "thawed", "workspace": target_ws}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="omabeacon")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -350,6 +616,21 @@ def main() -> int:
     p_keybind.add_argument("combo")
 
     sub.add_parser("reset", help="Reset visual/HUD settings to defaults (keeps workspace notes)")
+
+    p_extra = sub.add_parser("extrakeys", help="Enable/disable SUPER+F1..F10 (11-20) & F11/F12 cryo keys")
+    p_extra.add_argument("mode", choices=("on", "off", "toggle"))
+
+    sub.add_parser("freeze", help="Cryo-freeze current workspace into vault and free its slot")
+    sub.add_parser("vault", help="Open Cryo Vault arcade wheel overlay")
+    sub.add_parser("vault-list", help="List frozen vault items and occupied/free slots as JSON")
+
+    p_thaw = sub.add_parser("thaw", help="Thaw a frozen workspace from vault")
+    p_thaw.add_argument("id")
+    p_thaw.add_argument("--ws", type=int, default=None)
+    p_thaw.add_argument("--keep", action="store_true")
+
+    p_vdel = sub.add_parser("vault-delete", help="Delete a frozen workspace from vault")
+    p_vdel.add_argument("id")
 
     sub.add_parser("demo", help="Trigger a live flash HUD demo preview")
 
@@ -547,8 +828,50 @@ def main() -> int:
         fresh = default_state()
         fresh["workspaces"] = state.get("workspaces", {})
         fresh["keybind"] = state.get("keybind", "SUPER + N")
+        fresh["extraKeys"] = state.get("extraKeys", True)
         fresh["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
         save_state(fresh)
+        return 0
+
+    if args.cmd == "extrakeys":
+        if args.mode == "toggle":
+            state["extraKeys"] = not bool(state.get("extraKeys", True))
+        else:
+            state["extraKeys"] = args.mode == "on"
+        apply_extra_keys(state["extraKeys"])
+        save_state(state)
+        return 0
+
+    if args.cmd == "freeze":
+        res = freeze_workspace(state)
+        print(json.dumps(res, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "vault":
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        OPEN_MODE_FILE.write_text("vault", encoding="utf-8")
+        subprocess.run(["omarchy-shell", "shell", "toggle", "heelgueta.omabeacon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return 0
+
+    if args.cmd == "vault-list":
+        print(json.dumps(list_vault(), ensure_ascii=False))
+        return 0
+
+    if args.cmd == "thaw":
+        code, res = thaw_workspace(state, args.id, args.ws, args.keep)
+        print(json.dumps(res, ensure_ascii=False))
+        return code
+
+    if args.cmd == "vault-delete":
+        meta_path = VAULT_DIR / f"{args.id}.json"
+        if meta_path.exists():
+            try:
+                d = json.loads(meta_path.read_text(encoding="utf-8"))
+                if d.get("thumb"):
+                    Path(d["thumb"]).unlink(missing_ok=True)
+            except Exception:
+                pass
+            meta_path.unlink(missing_ok=True)
         return 0
 
     return 1
