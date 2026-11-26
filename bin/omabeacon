@@ -17,6 +17,7 @@ STATE_DIR = Path.home() / ".local" / "state" / "omarchy" / "omabeacon"
 STATE_FILE = STATE_DIR / "state.json"
 
 VALID_FX = ("clean", "pulse", "copper", "scramble", "marquee", "stealth")
+VALID_HUD_STYLES = ("ticker", "banner", "splat", "crt", "brutal")
 
 TERMINAL_CLASSES = {
     "alacritty",
@@ -41,6 +42,8 @@ def default_state() -> dict:
         "fx": "clean",
         "autoSense": False,
         "flashHud": True,
+        "hudStyle": "banner",
+        "hudPreviewSeq": 0,
         "workspaces": {},
     }
 
@@ -59,6 +62,8 @@ def load_state() -> dict:
     base["fx"] = data.get("fx") if data.get("fx") in VALID_FX else "clean"
     base["autoSense"] = bool(data.get("autoSense", False))
     base["flashHud"] = bool(data.get("flashHud", True))
+    base["hudStyle"] = data.get("hudStyle") if data.get("hudStyle") in VALID_HUD_STYLES else "banner"
+    base["hudPreviewSeq"] = int(data.get("hudPreviewSeq", 0))
     ws = data.get("workspaces")
     base["workspaces"] = ws if isinstance(ws, dict) else {}
     return base
@@ -247,8 +252,14 @@ def main() -> int:
     p_auto = sub.add_parser("autosense", help="Toggle or set local auto-sense fallback")
     p_auto.add_argument("mode", choices=("on", "off", "toggle"))
 
-    p_hud = sub.add_parser("hud", help="Toggle or set lower-third flash HUD")
+    p_hud = sub.add_parser("hud", help="Toggle or set flash HUD")
     p_hud.add_argument("mode", choices=("on", "off", "toggle"))
+
+    p_hudstyle = sub.add_parser("hudstyle", help="Set flash HUD style and optionally trigger demo")
+    p_hudstyle.add_argument("style", choices=VALID_HUD_STYLES)
+    p_hudstyle.add_argument("--demo", action="store_true")
+
+    sub.add_parser("demo", help="Trigger a live flash HUD demo preview")
 
     p_sense = sub.add_parser("sense", help="Locally inspect current workspace windows/processes")
     p_sense.add_argument("ws", nargs="?", type=int, default=None)
@@ -319,6 +330,19 @@ def main() -> int:
             state["flashHud"] = not state["flashHud"]
         else:
             state["flashHud"] = args.mode == "on"
+        save_state(state)
+        return 0
+
+    if args.cmd == "hudstyle":
+        state["hudStyle"] = args.style
+        if args.demo:
+            state["flashHud"] = True
+            state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "demo":
+        state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
         save_state(state)
         return 0
 

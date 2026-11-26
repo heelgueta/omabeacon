@@ -18,6 +18,7 @@ Item {
   readonly property string cliPath: Qt.resolvedUrl("bin/omabeacon").toString().replace(/^file:\/\//, "")
 
   readonly property var fxModes: ["clean", "pulse", "copper", "scramble", "marquee", "stealth"]
+  readonly property var hudStyles: ["ticker", "banner", "splat", "crt", "brutal"]
   readonly property var palette: [
     "#7aa2f7", // 1: electric blue
     "#bb9af7", // 2: neon violet
@@ -35,6 +36,7 @@ Item {
   property string selectedColor: ""
   property var workspacesData: ({})
   property string fxMode: "clean"
+  property string hudStyle: "banner"
   property bool autoSense: false
   property bool flashHud: true
   property string sensedSummary: ""
@@ -135,6 +137,7 @@ Item {
       var data = JSON.parse(txt)
       root.workspacesData = data.workspaces || ({})
       root.fxMode = data.fx || "clean"
+      root.hudStyle = data.hudStyle || "banner"
       root.autoSense = !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
@@ -393,6 +396,63 @@ Item {
             Layout.fillWidth: true
             height: 1
             color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.1)
+          }
+
+          // HUD Style selector (clicking triggers live demo)
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
+            Text {
+              text: "HUD FX"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Repeater {
+              model: root.hudStyles
+              delegate: Rectangle {
+                readonly property bool active: root.hudStyle === modelData
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+                implicitWidth: hudStyleLabel.implicitWidth + Style.space(10)
+                implicitHeight: Style.space(22)
+
+                Text {
+                  id: hudStyleLabel
+                  anchors.centerIn: parent
+                  text: modelData
+                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: active
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    Quickshell.execDetached([root.cliPath, "hudstyle", modelData, "--demo"])
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+              text: "click = demo"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.caption
+            }
           }
 
           // Lab FX + Toggles

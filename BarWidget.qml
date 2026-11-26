@@ -28,6 +28,8 @@ BarWidget {
   property string fxMode: "clean"
   property bool autoSense: false
   property bool flashHud: true
+  property string hudStyle: "banner"
+  property int hudPreviewSeq: -1
   property string sensedText: ""
   property int sensedWsId: -1
 
@@ -73,15 +75,18 @@ BarWidget {
     scrambleTimer.restart()
   }
 
-  function triggerHud(wsId, text) {
-    if (!root.flashHud || !text || text === "") return
+  function triggerHud(wsId, text, forceDemo) {
+    if ((!root.flashHud && !forceDemo) || !text || text === "") return
     root.hudVisible = true
     root.hudScrambleTick = 0
-    if (root.fxMode === "scramble" || root.fxMode === "copper") {
+    root.hudTargetText = text
+    if (root.hudStyle === "banner" || root.hudStyle === "splat" || root.hudStyle === "crt" || root.hudStyle === "brutal" || root.fxMode === "scramble" || root.fxMode === "copper") {
+      root.hudDisplayText = text
       hudScrambleTimer.restart()
     } else {
       root.hudDisplayText = text
     }
+    hudHideTimer.interval = (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 650 : 760
     hudHideTimer.restart()
   }
 
@@ -144,8 +149,16 @@ BarWidget {
       root.fxMode = data.fx || "clean"
       root.autoSense = !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
+      root.hudStyle = data.hudStyle || "banner"
+      var seq = parseInt(data.hudPreviewSeq || 0)
+      var shouldDemo = (root.hudPreviewSeq !== -1 && seq !== root.hudPreviewSeq)
+      root.hudPreviewSeq = seq
       root.triggerScramble(root.rawDisplayNote)
       if (root.autoSense) senseDebounce.restart()
+      if (shouldDemo) {
+        var demoTxt = root.rawDisplayNote !== "" ? root.rawDisplayNote : ("DEMO // WORKSPACE " + root.activeWsId)
+        root.triggerHud(root.activeWsId, demoTxt, true)
+      }
     } catch (e) {}
   }
 
@@ -251,19 +264,20 @@ BarWidget {
   }
 
   // Scramble decoder timer for Lower-Third HUD
+  property string hudTargetText: ""
   Timer {
     id: hudScrambleTimer
-    interval: 28
+    interval: 18
     repeat: true
     onTriggered: {
-      var target = root.rawDisplayNote
+      var target = root.hudTargetText
       if (!target) {
         root.hudDisplayText = ""
         stop()
         return
       }
       root.hudScrambleTick += 1
-      var totalTicks = 10
+      var totalTicks = 8
       var locked = Math.floor((root.hudScrambleTick / totalTicks) * target.length)
       if (root.hudScrambleTick >= totalTicks) {
         root.hudDisplayText = target
@@ -484,7 +498,7 @@ BarWidget {
     }
   }
 
-  // Optional Lower-Third Hacker News-Bar Flash HUD
+  // Optional Hacker Flash HUD (ticker | banner | splat | crt | brutal)
   PanelWindow {
     id: flashHudWindow
     visible: root.hudVisible || hudCard.opacity > 0.01
@@ -496,79 +510,193 @@ BarWidget {
     exclusionMode: ExclusionMode.Ignore
     mask: Region {}
 
+    readonly property bool isCentered: root.hudStyle === "splat" || root.hudStyle === "brutal"
+    readonly property bool isFullWidth: root.hudStyle === "banner" || root.hudStyle === "crt" || root.hudStyle === "brutal"
+
     Rectangle {
       id: hudCard
       anchors.horizontalCenter: parent.horizontalCenter
-      anchors.bottom: parent.bottom
-      anchors.bottomMargin: root.hudVisible ? Style.space(52) : Style.space(34)
-      width: Math.min(parent.width - Style.gapsOut * 4, Math.max(Style.space(320), hudRow.implicitWidth + Style.space(40)))
-      height: Style.space(52)
-      radius: Style.cornerRadius
+      anchors.verticalCenter: flashHudWindow.isCentered ? parent.verticalCenter : undefined
+      anchors.bottom: flashHudWindow.isCentered ? undefined : parent.bottom
+      anchors.bottomMargin: flashHudWindow.isCentered ? 0 : (root.hudStyle === "banner" || root.hudStyle === "crt" ? Style.space(28) : Style.space(48))
+      width: {
+        if (flashHudWindow.isFullWidth) return parent.width
+        if (root.hudStyle === "splat") return Math.min(parent.width - Style.gapsOut * 4, Math.max(Style.space(520), parent.width * 0.78))
+        return Math.min(parent.width - Style.gapsOut * 4, Math.max(Style.space(340), hudMainCol.implicitWidth + Style.space(48)))
+      }
+      height: {
+        if (root.hudStyle === "brutal") return Style.space(210)
+        if (root.hudStyle === "splat") return Style.space(160)
+        if (root.hudStyle === "crt") return Style.space(132)
+        if (root.hudStyle === "banner") return Style.space(78)
+        return Style.space(52)
+      }
+      radius: flashHudWindow.isFullWidth ? 0 : Style.cornerRadius
       clip: true
-      color: Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.90)
-      border.width: 1.5
-      border.color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.85)
+      color: {
+        if (root.hudStyle === "brutal") return Qt.rgba(0.03, 0.03, 0.05, 0.92)
+        if (root.hudStyle === "crt") return Qt.rgba(0.04, 0.05, 0.08, 0.94)
+        return Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.92)
+      }
+      border.width: flashHudWindow.isFullWidth ? 0 : 2
+      border.color: root.wsColor
       opacity: root.hudVisible ? 1.0 : 0.0
+      scale: (flashHudWindow.isCentered && !root.hudVisible) ? 0.94 : 1.0
 
-      Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-      Behavior on anchors.bottomMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+      Behavior on opacity {
+        NumberAnimation { duration: root.hudVisible ? 55 : 130; easing.type: Easing.OutCubic }
+      }
+      Behavior on scale {
+        NumberAnimation { duration: root.hudVisible ? 70 : 130; easing.type: Easing.OutBack }
+      }
 
-      // Top glowing accent bar
+      // Top & bottom neon rails for full-width/centered styles
       Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 2
+        height: (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 3 : 2
+        color: root.wsColor
+      }
+      Rectangle {
+        visible: flashHudWindow.isFullWidth || root.hudStyle === "splat"
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 3 : 2
         color: root.wsColor
       }
 
-      // Subtle CRT scanlines
+      // CRT / Amiga copper raster bars (for crt & brutal)
       Column {
+        visible: root.hudStyle === "crt"
         anchors.fill: parent
-        spacing: 3
-        opacity: 0.14
+        spacing: 2
+        opacity: 0.28
         Repeater {
-          model: 14
+          model: 12
           Rectangle {
             width: parent.width
-            height: 1
-            color: root.wsColor
+            height: 8
+            color: index % 3 === 0 ? root.wsColor : (index % 3 === 1 ? "#7dcfff" : "#bb9af7")
           }
         }
       }
 
-      RowLayout {
-        id: hudRow
-        anchors.centerIn: parent
-        spacing: Style.space(12)
-
-        Rectangle {
-          radius: Style.space(4)
-          color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.22)
-          border.width: 1
-          border.color: root.wsColor
-          implicitWidth: wsTag.implicitWidth + Style.space(14)
-          implicitHeight: Style.space(28)
-
-          Text {
-            id: wsTag
-            anchors.centerIn: parent
-            text: "WS " + (root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId))
-            color: root.wsColor
-            font.family: Style.font.monoFamily || "monospace"
-            font.pixelSize: Style.font.body
-            font.bold: true
+      // Heavy scanlines
+      Column {
+        anchors.fill: parent
+        spacing: root.hudStyle === "crt" || root.hudStyle === "brutal" ? 2 : 3
+        opacity: root.hudStyle === "crt" || root.hudStyle === "brutal" ? 0.26 : 0.12
+        Repeater {
+          model: 48
+          Rectangle {
+            width: parent.width
+            height: 1
+            color: "#000000"
           }
         }
+      }
 
+      // Main HUD Content
+      ColumnLayout {
+        id: hudMainCol
+        anchors.centerIn: parent
+        spacing: Style.space(6)
+        width: Math.min(hudCard.width - Style.space(48), parent.width - Style.space(48))
+
+        // Telemetry micro-header for banner / splat / crt / brutal
         Text {
-          text: root.hudDisplayText.toUpperCase()
-          color: Color.foreground
+          visible: root.hudStyle !== "ticker"
+          Layout.alignment: Qt.AlignHCenter
+          text: {
+            var wsStr = root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId)
+            if (root.hudStyle === "brutal") return ">>> WORKSPACE " + wsStr + " // LOCKED IN <<<"
+            if (root.hudStyle === "crt") return ":: AMIGA-BEACON 0x" + wsStr + " :: " + root.fxMode.toUpperCase() + " ::"
+            if (root.hudStyle === "splat") return "[// WS " + wsStr + " //]"
+            return "0x" + wsStr + " // ACTIVE WORKSPACE CONTEXT"
+          }
+          color: root.wsColor
           font.family: Style.font.monoFamily || "monospace"
-          font.pixelSize: Style.font.title || 18
+          font.pixelSize: (root.hudStyle === "brutal" || root.hudStyle === "splat") ? Style.font.body : Style.font.caption
           font.bold: true
-          elide: Text.ElideRight
-          Layout.maximumWidth: flashHudWindow.width - Style.space(180)
+          font.letterSpacing: 2.5
+        }
+
+        // Ticker layout (compact row) vs Big centered layouts
+        RowLayout {
+          Layout.alignment: Qt.AlignHCenter
+          spacing: Style.space(12)
+
+          Rectangle {
+            visible: root.hudStyle === "ticker"
+            radius: Style.space(4)
+            color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.22)
+            border.width: 1
+            border.color: root.wsColor
+            implicitWidth: wsTag.implicitWidth + Style.space(14)
+            implicitHeight: Style.space(28)
+
+            Text {
+              id: wsTag
+              anchors.centerIn: parent
+              text: "WS " + (root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId))
+              color: root.wsColor
+              font.family: Style.font.monoFamily || "monospace"
+              font.pixelSize: Style.font.body
+              font.bold: true
+            }
+          }
+
+          // RGB-split brutalist text stack
+          Item {
+            Layout.alignment: Qt.AlignHCenter
+            implicitWidth: Math.min(hudMainCol.width, mainHudText.implicitWidth)
+            implicitHeight: mainHudText.implicitHeight
+
+            // Cyan chromatic aberration ghost (brutal only)
+            Text {
+              visible: root.hudStyle === "brutal"
+              x: -4; y: -2
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              text: mainHudText.text
+              color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
+              font: mainHudText.font
+              elide: Text.ElideRight
+            }
+
+            // Magenta chromatic aberration ghost (brutal only)
+            Text {
+              visible: root.hudStyle === "brutal"
+              x: 4; y: 2
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              text: mainHudText.text
+              color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
+              font: mainHudText.font
+              elide: Text.ElideRight
+            }
+
+            Text {
+              id: mainHudText
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              text: root.hudDisplayText.toUpperCase()
+              color: Color.foreground
+              font.family: Style.font.monoFamily || "monospace"
+              font.pixelSize: {
+                if (root.hudStyle === "brutal") return Style.space(64)
+                if (root.hudStyle === "splat") return Style.space(48)
+                if (root.hudStyle === "crt") return Style.space(40)
+                if (root.hudStyle === "banner") return Style.space(26)
+                return Style.font.title || 18
+              }
+              font.bold: true
+              font.letterSpacing: root.hudStyle === "brutal" ? 3 : (root.hudStyle === "ticker" ? 0 : 1.5)
+              elide: Text.ElideRight
+            }
+          }
         }
       }
     }
