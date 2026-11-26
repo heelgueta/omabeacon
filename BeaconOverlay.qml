@@ -242,10 +242,21 @@ Item {
     Qt.callLater(function() { glyphSearchInput.forceActiveFocus() })
   }
 
+  readonly property var emojiAliases: ({
+    "🐛": "caterpillar larva",
+    "🪱": "worm earthworm",
+    "🦋": "butterfly moth",
+    "🐞": "ladybug beetle",
+    "🐝": "bee honeybee",
+    "🐜": "ant",
+    "🕷": "spider",
+    "🦂": "scorpion"
+  })
+
   function rebuildGlyphGrid() {
     glyphGridModel.clear()
     var q = root.glyphFilter.trim().toLowerCase()
-    var limit = 180
+    var limit = 2500
     var count = 0
 
     if (root.glyphTab === "all" || root.glyphTab === "icons") {
@@ -262,6 +273,7 @@ Item {
       for (var j = 0; j < root.emojiList.length && count < limit; j++) {
         var em = root.emojiList[j]
         var kw = em.k ? String(em.k).toLowerCase() : ""
+        if (root.emojiAliases[em.e]) kw += " " + root.emojiAliases[em.e]
         if (q === "" || kw.indexOf(q) !== -1 || em.e === q) {
           glyphGridModel.append({ glyph: em.e, keywords: kw })
           count++
@@ -335,8 +347,8 @@ Item {
       // Main card
       Rectangle {
         id: card
-        width: Math.min(Style.space(600), parent.width - Style.gapsOut * 2)
-        height: cardCol.implicitHeight + Style.space(32)
+        width: Math.min(Style.space(900), parent.width - Style.gapsOut * 2)
+        height: cardCol.implicitHeight + Style.space(44)
         anchors.centerIn: parent
         radius: Style.cornerRadius
         color: root.background
@@ -349,17 +361,17 @@ Item {
         ColumnLayout {
           id: cardCol
           anchors.fill: parent
-          anchors.margins: Style.space(16)
-          spacing: Style.space(12)
+          anchors.margins: Style.space(22)
+          spacing: Style.space(14)
 
           // Header row
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.space(8)
+            spacing: Style.space(10)
 
             Rectangle {
-              width: Style.space(10)
-              height: Style.space(10)
+              width: Style.space(12)
+              height: Style.space(12)
               radius: width / 2
               color: root.activeAccent
             }
@@ -368,7 +380,7 @@ Item {
               text: "WORKSPACE " + root.editWsId
               color: root.activeAccent
               font.family: root.monoFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.heading || Style.font.title
               font.bold: true
             }
 
@@ -430,7 +442,7 @@ Item {
           // Text input box
           Rectangle {
             Layout.fillWidth: true
-            height: Style.space(42)
+            height: Style.space(50)
             radius: Style.space(6)
             color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
             border.width: 1.5
@@ -439,14 +451,14 @@ Item {
             TextInput {
               id: noteInput
               anchors.fill: parent
-              anchors.leftMargin: Style.space(12)
-              anchors.rightMargin: Style.space(12)
+              anchors.leftMargin: Style.space(14)
+              anchors.rightMargin: Style.space(14)
               verticalAlignment: TextInput.AlignVCenter
               color: root.foreground
               selectionColor: root.activeAccent
               selectedTextColor: root.background
               font.family: root.fontFamily
-              font.pixelSize: Style.font.title || 16
+              font.pixelSize: Style.font.heading || 20
               clip: true
 
               Text {
@@ -517,8 +529,8 @@ Item {
             Repeater {
               model: root.palette
               delegate: Rectangle {
-                width: Style.space(20)
-                height: Style.space(20)
+                width: Style.space(24)
+                height: Style.space(24)
                 radius: width / 2
                 color: modelData
                 border.width: root.selectedColor === modelData ? 2.5 : 1
@@ -597,7 +609,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: palLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: palLabel
@@ -704,7 +716,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: gPosLabel.implicitWidth + Style.space(8)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: gPosLabel
@@ -814,7 +826,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: hudSizeLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: hudSizeLabel
@@ -858,7 +870,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: hudCfxLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: hudCfxLabel
@@ -906,7 +918,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: hudPosLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: hudPosLabel
@@ -950,7 +962,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: hudCaseLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: hudCaseLabel
@@ -998,7 +1010,7 @@ Item {
                 border.width: 1
                 border.color: active ? root.activeAccent : "transparent"
                 implicitWidth: fxLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(22)
+                implicitHeight: Style.space(26)
 
                 Text {
                   id: fxLabel
@@ -1170,7 +1182,7 @@ Item {
                 readonly property bool isEditing: root.editWsId === wsNum
 
                 Layout.fillWidth: true
-                height: Style.space(28)
+                height: Style.space(36)
                 radius: Style.space(4)
                 color: isEditing
                   ? Qt.rgba(dotColor.r, dotColor.g, dotColor.b, 0.22)
@@ -1231,8 +1243,8 @@ Item {
       Rectangle {
         id: glyphPickerCard
         visible: root.glyphPickerOpen
-        width: Math.min(Style.space(420), parent.width - Style.gapsOut * 4)
-        height: Math.min(Style.space(380), parent.height - Style.gapsOut * 4)
+        width: Math.min(Style.space(640), parent.width - Style.gapsOut * 4)
+        height: Math.min(Style.space(520), parent.height - Style.gapsOut * 4)
         anchors.centerIn: parent
         radius: Style.cornerRadius
         color: root.background
@@ -1371,8 +1383,8 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            cellWidth: Style.space(42)
-            cellHeight: Style.space(42)
+            cellWidth: Style.space(48)
+            cellHeight: Style.space(48)
             model: glyphGridModel
 
             delegate: Rectangle {
@@ -1389,7 +1401,7 @@ Item {
                 anchors.centerIn: parent
                 text: glyph
                 color: root.foreground
-                font.pixelSize: Style.space(20)
+                font.pixelSize: Style.space(24)
               }
 
               MouseArea {
