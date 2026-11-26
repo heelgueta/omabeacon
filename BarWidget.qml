@@ -10,6 +10,8 @@ import qs.Ui
 BarWidget {
   id: root
   moduleName: "heelgueta.omabeacon"
+  implicitWidth: pillButton.implicitWidth
+  implicitHeight: pillButton.implicitHeight
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateFilePath: home + "/.local/state/omarchy/omabeacon/state.json"
@@ -292,7 +294,7 @@ BarWidget {
     interval: 3500
     repeat: false
     onTriggered: {
-      if (root.fxMode === "stealth" && !barMouse.containsMouse) {
+      if (root.fxMode === "stealth" && !pillButton.tooltipHovered) {
         root.stealthDimmed = true
       }
     }
@@ -302,15 +304,16 @@ BarWidget {
   WidgetButton {
     id: pillButton
     bar: root.bar
+    hasVisualContent: true
+    labelVisible: false
     horizontalMargin: 4
     verticalPadding: 3
+    fixedWidth: Math.max(Style.space(34), contentRow.implicitWidth + Style.space(20))
     fixedHeight: root.barSize
+    dimmed: root.fxMode === "stealth" && root.stealthDimmed && !pillButton.tooltipHovered
 
-    opacity: (root.fxMode === "stealth" && root.stealthDimmed && !barMouse.containsMouse) ? 0.38 : 1.0
-    Behavior on opacity { NumberAnimation { duration: 240 } }
-
-    onPressed: function(mouse) {
-      if (mouse && mouse.button === Qt.RightButton) {
+    onPressed: function(button) {
+      if (button === Qt.RightButton) {
         var idx = root.fxModes.indexOf(root.fxMode)
         var nextFx = root.fxModes[(idx + 1) % root.fxModes.length]
         Quickshell.execDetached([root.cliPath, "fx", nextFx])
@@ -380,15 +383,6 @@ BarWidget {
             color: Qt.rgba(0, 0, 0, 0.18)
           }
         }
-      }
-
-      MouseArea {
-        id: barMouse
-        anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
-        onEntered: root.stealthDimmed = false
-        onExited: if (root.fxMode === "stealth") stealthTimer.restart()
       }
 
       RowLayout {
