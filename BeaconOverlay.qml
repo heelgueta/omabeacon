@@ -1557,17 +1557,13 @@ Item {
         }
       }
 
-      // --- STASIS WHEEL (Cryo Vault) ---
+      // --- STASIS WHEEL (Fullscreen, Borderless, L33T Hyperspin-style) ---
       Rectangle {
         id: vaultCard
         visible: root.vaultMode
-        width: Math.min(Style.space(1180), parent.width - Style.gapsOut * 2)
-        height: Math.min(Style.space(660), parent.height - Style.gapsOut * 2)
-        anchors.centerIn: parent
-        radius: Style.cornerRadius
-        color: Qt.rgba(0.03, 0.03, 0.05, 0.96)
-        border.width: 2
-        border.color: vaultCard.selColor
+        anchors.fill: parent
+        color: Qt.rgba(0.015, 0.015, 0.025, 0.94)
+        border.width: 0
 
         readonly property var selItem: (root.vaultItems.length > 0 && root.vaultIndex >= 0 && root.vaultIndex < root.vaultItems.length)
           ? root.vaultItems[root.vaultIndex]
@@ -1713,24 +1709,75 @@ Item {
             Layout.fillHeight: true
             spacing: Style.space(20)
 
-            // LEFT: Visual Preview & Manifest
+            // LEFT: Huge Borderless Preview + Giant Glitch Title
             ColumnLayout {
-              Layout.preferredWidth: vaultCard.width * 0.44
+              Layout.preferredWidth: vaultCard.width * 0.54
               Layout.fillHeight: true
-              spacing: Style.space(12)
+              spacing: Style.space(16)
 
-              Rectangle {
+              // Giant L33T Glitch Workspace Title
+              Item {
+                Layout.fillWidth: true
+                implicitHeight: leftTitleTxt.implicitHeight
+
+                readonly property string bigTitle: vaultCard.selItem
+                  ? (((vaultCard.selItem.glyph ? vaultCard.selItem.glyph + " " : "") + (vaultCard.selItem.note || "UNTITLED")).toUpperCase())
+                  : ""
+
+                Text {
+                  x: 2; y: 3
+                  width: parent.width
+                  text: parent.bigTitle
+                  color: Qt.rgba(0, 0, 0, 0.85)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.space(52)
+                  font.bold: true
+                  font.letterSpacing: 2.5
+                  elide: Text.ElideRight
+                }
+                Text {
+                  x: -4; y: -2
+                  width: parent.width
+                  text: parent.bigTitle
+                  color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.space(52)
+                  font.bold: true
+                  font.letterSpacing: 2.5
+                  elide: Text.ElideRight
+                }
+                Text {
+                  x: 4; y: 2
+                  width: parent.width
+                  text: parent.bigTitle
+                  color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.space(52)
+                  font.bold: true
+                  font.letterSpacing: 2.5
+                  elide: Text.ElideRight
+                }
+                Text {
+                  id: leftTitleTxt
+                  width: parent.width
+                  text: parent.bigTitle
+                  color: Color.foreground
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.space(52)
+                  font.bold: true
+                  font.letterSpacing: 2.5
+                  elide: Text.ElideRight
+                }
+              }
+
+              // Borderless Screenshot Preview with CRT scanlines
+              Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                radius: Style.cornerRadius
                 clip: true
-                color: Qt.rgba(0, 0, 0, 0.65)
-                border.width: 2
-                border.color: vaultCard.selColor
 
                 Image {
                   anchors.fill: parent
-                  anchors.margins: 2
                   source: (vaultCard.selItem && vaultCard.selItem.thumb) ? ("file://" + vaultCard.selItem.thumb) : ""
                   fillMode: Image.PreserveAspectFit
                   asynchronous: true
@@ -1740,9 +1787,9 @@ Item {
                 Column {
                   anchors.fill: parent
                   spacing: 3
-                  opacity: 0.18
+                  opacity: 0.16
                   Repeater {
-                    model: 80
+                    model: 120
                     Rectangle { width: parent.width; height: 1; color: "#000000" }
                   }
                 }
@@ -1822,22 +1869,34 @@ Item {
               }
             }
 
-            // RIGHT: Glitchy Arcade Wheel
+            // RIGHT: Borderless Hyperspin Curved Arcade Wheel
             Item {
               Layout.fillWidth: true
               Layout.fillHeight: true
               clip: true
+
+              // Sweeping dark wheel disc backdrop on right edge
+              Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                x: Style.space(40)
+                width: parent.height * 1.4
+                height: parent.height * 1.4
+                radius: width / 2
+                color: Qt.rgba(0, 0, 0, 0.62)
+                border.width: 2
+                border.color: Qt.rgba(vaultCard.selColor.r, vaultCard.selColor.g, vaultCard.selColor.b, 0.30)
+              }
 
               ListView {
                 id: wheelList
                 anchors.fill: parent
                 model: root.vaultItems
                 currentIndex: root.vaultIndex
-                preferredHighlightBegin: height * 0.36
-                preferredHighlightEnd: height * 0.64
+                preferredHighlightBegin: height * 0.40
+                preferredHighlightEnd: height * 0.60
                 highlightRangeMode: ListView.StrictlyEnforceRange
-                highlightMoveDuration: 140
-                spacing: Style.space(14)
+                highlightMoveDuration: 130
+                spacing: Style.space(18)
 
                 delegate: Item {
                   readonly property int dist: index - root.vaultIndex
@@ -1845,76 +1904,76 @@ Item {
                   readonly property bool selected: dist === 0
                   readonly property color itemCol: modelData.color || root.activeAccent
                   readonly property string itemTitle: ((modelData.glyph ? modelData.glyph + " " : "") + (modelData.note || "UNTITLED")).toUpperCase()
-                  readonly property real arcOffset: Math.min(Style.space(120), Math.pow(absDist, 1.55) * Style.space(26))
+                  readonly property real arcOffset: Math.min(Style.space(180), Math.pow(absDist, 1.5) * Style.space(36)) + Style.space(40)
                   width: wheelList.width
-                  height: selected ? Style.space(96) : Style.space(58)
-                  opacity: selected ? 1.0 : Math.max(0.20, 0.78 - absDist * 0.20)
-                  scale: selected ? 1.0 : Math.max(0.68, 0.88 - absDist * 0.07)
+                  height: selected ? Style.space(86) : Style.space(52)
+                  opacity: selected ? 1.0 : Math.max(0.18, 0.78 - absDist * 0.20)
+                  scale: selected ? 1.04 : Math.max(0.58, 0.84 - absDist * 0.08)
+                  rotation: Math.max(-20, Math.min(20, dist * 4.5))
 
-                  Behavior on opacity { NumberAnimation { duration: 120 } }
-                  Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                  Behavior on opacity { NumberAnimation { duration: 110 } }
+                  Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                  Behavior on rotation { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
-                  // Curved Arcade Marquee Plate
-                  Rectangle {
+                  Item {
                     anchors.verticalCenter: parent.verticalCenter
                     x: arcOffset
-                    width: parent.width - arcOffset - Style.space(8)
-                    height: selected ? Style.space(84) : Style.space(50)
-                    radius: Style.space(8)
-                    color: selected
-                      ? Qt.rgba(itemCol.r, itemCol.g, itemCol.b, 0.20)
-                      : Qt.rgba(0.08, 0.09, 0.13, 0.72)
-                    border.width: selected ? 2.5 : 1
-                    border.color: selected ? itemCol : Qt.rgba(itemCol.r, itemCol.g, itemCol.b, 0.32)
+                    width: parent.width - arcOffset - Style.space(16)
+                    height: parent.height
 
-                    Behavior on x { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                    Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
-                    // Left neon bar
-                    Rectangle {
-                      anchors.left: parent.left
-                      anchors.top: parent.top
-                      anchors.bottom: parent.bottom
-                      width: selected ? 6 : 3
-                      radius: 2
-                      color: itemCol
+                    // Dark legibility shadow
+                    Text {
+                      anchors.verticalCenter: parent.verticalCenter
+                      x: 2; y: 3
+                      width: parent.width
+                      text: itemTitle
+                      color: Qt.rgba(0, 0, 0, 0.90)
+                      font.family: root.monoFamily
+                      font.pixelSize: selected ? Style.space(44) : Style.space(26)
+                      font.bold: true
+                      font.letterSpacing: selected ? 2.5 : 1.0
+                      elide: Text.ElideRight
                     }
 
-                    // Cyan & Magenta RGB-split ghosts on selected arcade wheel item
+                    // Cyan & Magenta RGB-split ghosts on selected item
                     Text {
                       visible: selected
                       anchors.verticalCenter: parent.verticalCenter
-                      x: Style.space(18) - 4; y: -2
-                      width: parent.width - Style.space(32)
+                      x: -4; y: -2
+                      width: parent.width
                       text: itemTitle
-                      color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
+                      color: Qt.rgba(0.2, 0.95, 1.0, 0.70)
                       font.family: root.monoFamily
-                      font.pixelSize: Style.space(32)
+                      font.pixelSize: Style.space(44)
                       font.bold: true
+                      font.letterSpacing: 2.5
                       elide: Text.ElideRight
                     }
                     Text {
                       visible: selected
                       anchors.verticalCenter: parent.verticalCenter
-                      x: Style.space(18) + 4; y: 2
-                      width: parent.width - Style.space(32)
+                      x: 4; y: 2
+                      width: parent.width
                       text: itemTitle
-                      color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
+                      color: Qt.rgba(1.0, 0.2, 0.55, 0.70)
                       font.family: root.monoFamily
-                      font.pixelSize: Style.space(32)
+                      font.pixelSize: Style.space(44)
                       font.bold: true
+                      font.letterSpacing: 2.5
                       elide: Text.ElideRight
                     }
 
                     Text {
                       anchors.verticalCenter: parent.verticalCenter
-                      x: Style.space(18)
-                      width: parent.width - Style.space(32)
+                      width: parent.width
                       text: itemTitle
                       color: selected ? Color.foreground : itemCol
                       font.family: root.monoFamily
-                      font.pixelSize: selected ? Style.space(32) : Style.space(20)
+                      font.pixelSize: selected ? Style.space(44) : Style.space(26)
                       font.bold: true
-                      font.letterSpacing: selected ? 2.2 : 1.0
+                      font.letterSpacing: selected ? 2.5 : 1.0
                       elide: Text.ElideRight
                     }
                   }
