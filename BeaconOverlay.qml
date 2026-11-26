@@ -21,7 +21,7 @@ Item {
   readonly property var fxModes: ["clean", "pulse", "copper", "scramble", "marquee", "stealth"]
   readonly property var hudStyles: ["glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "vhs"]
   readonly property var hudPositions: ["top", "center", "bottom"]
-  readonly property var hudSizes: ["sm", "md", "lg", "xl", "xxl", "mega"]
+  readonly property var hudSizes: ["sm", "md", "lg", "xl", "xxl", "mega", "giga", "tera"]
   readonly property var hudColorFxs: ["low", "mid", "high", "flare"]
   readonly property var hudCases: ["upper", "asis", "lower"]
   readonly property var glyphPositions: ["off", "above", "below"]
@@ -92,7 +92,7 @@ Item {
   property string fxMode: "clean"
   property string hudStyle: "glitch"
   property string hudPos: "center"
-  property string hudSize: "md"
+  property string hudSize: "mega"
   property string hudColorFx: "mid"
   property string hudCase: "upper"
   property string paletteName: "tokyo"
@@ -208,7 +208,7 @@ Item {
       if (st === "brutal" || st === "boss") st = "glitch"
       root.hudStyle = st
       root.hudPos = data.hudPos || "center"
-      root.hudSize = data.hudSize || "md"
+      root.hudSize = data.hudSize || "mega"
       root.hudColorFx = data.hudColorFx || "mid"
       root.hudCase = data.hudCase || "upper"
       root.paletteName = data.palette || "tokyo"
@@ -984,56 +984,6 @@ Item {
                 }
               }
             }
-          }
-
-          // Lab FX + Toggles
-          RowLayout {
-            Layout.fillWidth: true
-            spacing: Style.space(6)
-
-            Text {
-              text: "LAB FX"
-              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
-              font.family: root.monoFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-
-            Repeater {
-              model: root.fxModes
-              delegate: Rectangle {
-                readonly property bool active: root.fxMode === modelData
-                radius: Style.space(4)
-                color: active
-                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
-                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
-                border.width: 1
-                border.color: active ? root.activeAccent : "transparent"
-                implicitWidth: fxLabel.implicitWidth + Style.space(10)
-                implicitHeight: Style.space(26)
-
-                Text {
-                  id: fxLabel
-                  anchors.centerIn: parent
-                  text: modelData
-                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
-                  font.family: root.monoFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: active
-                }
-
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: {
-                    Quickshell.execDetached([root.cliPath, "fx", modelData])
-                    noteInput.forceActiveFocus()
-                  }
-                }
-              }
-            }
-
-            Item { Layout.fillWidth: true }
           }
 
           // Toggles row (Auto-Sense & Flash HUD)

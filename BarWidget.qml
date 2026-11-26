@@ -29,12 +29,12 @@ BarWidget {
 
   property int activeWsId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
   property var workspacesData: ({})
-  property string fxMode: "clean"
+  property string fxMode: "scramble"
   property bool autoSense: true
   property bool flashHud: true
   property string hudStyle: "glitch"
   property string hudPos: "center"
-  property string hudSize: "md"
+  property string hudSize: "mega"
   property string hudColorFx: "mid"
   property string hudCase: "upper"
   property string paletteName: "tokyo"
@@ -75,11 +75,6 @@ BarWidget {
   function triggerScramble(targetText) {
     if (targetText === "") {
       root.displayNote = ""
-      scrambleTimer.stop()
-      return
-    }
-    if (root.fxMode !== "scramble") {
-      root.displayNote = targetText
       scrambleTimer.stop()
       return
     }
@@ -159,14 +154,14 @@ BarWidget {
     try {
       var data = JSON.parse(txt)
       root.workspacesData = data.workspaces || ({})
-      root.fxMode = data.fx || "clean"
+      root.fxMode = "scramble"
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
       var st = data.hudStyle || "glitch"
       if (st === "brutal" || st === "boss") st = "glitch"
       root.hudStyle = st
       root.hudPos = data.hudPos || "center"
-      root.hudSize = data.hudSize || "md"
+      root.hudSize = data.hudSize || "mega"
       root.hudColorFx = data.hudColorFx || "mid"
       root.hudCase = data.hudCase || "upper"
       root.paletteName = data.palette || "tokyo"
@@ -328,17 +323,6 @@ BarWidget {
     onTriggered: root.hudVisible = false
   }
 
-  Timer {
-    id: stealthTimer
-    interval: 3500
-    repeat: false
-    onTriggered: {
-      if (root.fxMode === "stealth" && !pillButton.tooltipHovered) {
-        root.stealthDimmed = true
-      }
-    }
-  }
-
   // Bar Pill UI
   WidgetButton {
     id: pillButton
@@ -347,20 +331,17 @@ BarWidget {
     labelVisible: false
     horizontalMargin: 4
     verticalPadding: 3
-    fixedWidth: Math.max(Style.space(34), contentRow.implicitWidth + Style.space(20))
+    fixedWidth: Math.max(Style.space(36), contentRow.implicitWidth + Style.space(22))
     fixedHeight: root.barSize
-    dimmed: root.fxMode === "stealth" && root.stealthDimmed && !pillButton.tooltipHovered
     tooltipText: {
       var head = "Workspace " + root.activeWsId + (root.wsGlyph !== "" ? (" " + root.wsGlyph) : "")
       var body = root.rawDisplayNote !== "" ? root.rawDisplayNote : "No note set"
-      return head + " — " + body + "\nFX: " + root.fxMode + " · HUD: " + root.hudStyle + "\nLeft-click: edit · Right-click: cycle FX"
+      return head + " — " + body + "\nHUD: " + root.hudStyle + " (" + root.hudSize + ")\nLeft-click: edit · Right-click: toggle HUD"
     }
 
     onPressed: function(button) {
       if (button === Qt.RightButton) {
-        var idx = root.fxModes.indexOf(root.fxMode)
-        var nextFx = root.fxModes[(idx + 1) % root.fxModes.length]
-        Quickshell.execDetached([root.cliPath, "fx", nextFx])
+        Quickshell.execDetached([root.cliPath, "hud", "toggle"])
       } else {
         if (root.bar && root.bar.shell && typeof root.bar.shell.toggle === "function") {
           root.bar.shell.toggle("heelgueta.omabeacon")
@@ -381,108 +362,35 @@ BarWidget {
         : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.05)
       border.width: 1
       border.color: root.hasNote
-        ? Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, root.fxMode === "pulse" ? pulseBorderAlpha : 0.50)
+        ? Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.52)
         : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.15)
-
-      property real pulseBorderAlpha: 0.45
-      SequentialAnimation on pulseBorderAlpha {
-        running: root.fxMode === "pulse" && root.hasNote
-        loops: Animation.Infinite
-        NumberAnimation { to: 0.95; duration: 900; easing.type: Easing.InOutSine }
-        NumberAnimation { to: 0.30; duration: 900; easing.type: Easing.InOutSine }
-      }
-
-      // Amiga Copperbar shimmer FX
-      Rectangle {
-        visible: root.fxMode === "copper" && root.hasNote
-        width: parent.width * 0.45
-        height: parent.height
-        opacity: 0.32
-        gradient: Gradient {
-          orientation: Gradient.Horizontal
-          GradientStop { position: 0.0; color: "transparent" }
-          GradientStop { position: 0.5; color: root.wsColor }
-          GradientStop { position: 1.0; color: "transparent" }
-        }
-        property real sweepX: -width
-        x: sweepX
-        SequentialAnimation on sweepX {
-          running: root.fxMode === "copper" && root.hasNote
-          loops: Animation.Infinite
-          NumberAnimation { from: -pillBg.width * 0.5; to: pillBg.width * 1.1; duration: 1800; easing.type: Easing.InOutQuad }
-          PauseAnimation { duration: 400 }
-        }
-      }
-
-      // Subtle CRT scanline overlay in copper mode
-      Column {
-        visible: root.fxMode === "copper" && root.hasNote
-        anchors.fill: parent
-        spacing: 2
-        Repeater {
-          model: 8
-          Rectangle {
-            width: parent.width
-            height: 1
-            color: Qt.rgba(0, 0, 0, 0.18)
-          }
-        }
-      }
 
       RowLayout {
         id: contentRow
         anchors.centerIn: parent
-        spacing: Style.space(5)
+        spacing: Style.space(6)
 
-        // Beacon dot + optional sonar ring
-        Item {
-          width: Style.space(10)
-          height: Style.space(10)
-
-          Rectangle {
-            id: pulseRing
-            visible: root.fxMode === "pulse" && root.hasNote
-            anchors.centerIn: parent
-            width: parent.width
-            height: parent.height
-            radius: width / 2
-            color: "transparent"
-            border.width: 1.5
-            border.color: root.wsColor
-            property real ringScale: 1.0
-            property real ringAlpha: 0.8
-            scale: ringScale
-            opacity: ringAlpha
-            ParallelAnimation {
-              running: root.fxMode === "pulse" && root.hasNote
-              loops: Animation.Infinite
-              NumberAnimation { target: pulseRing; property: "ringScale"; from: 0.9; to: 2.1; duration: 1400; easing.type: Easing.OutQuad }
-              NumberAnimation { target: pulseRing; property: "ringAlpha"; from: 0.85; to: 0.0; duration: 1400; easing.type: Easing.OutQuad }
-            }
-          }
-
-          Rectangle {
-            anchors.centerIn: parent
-            width: Style.space(7)
-            height: Style.space(7)
-            radius: width / 2
-            color: root.hasNote ? root.wsColor : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.35)
-          }
+        // Beacon dot
+        Rectangle {
+          width: Style.space(8)
+          height: Style.space(8)
+          radius: width / 2
+          color: root.hasNote ? root.wsColor : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.35)
         }
 
         // Workspace number badge + optional glyph
         Text {
           text: root.wsGlyph !== "" ? (root.activeWsId + " " + root.wsGlyph) : String(root.activeWsId)
           color: root.hasNote ? root.wsColor : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.55)
-          font.family: Style.font.monoFamily || (root.bar ? root.bar.fontFamily : "")
-          font.pixelSize: Style.font.caption
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
           font.bold: true
         }
 
-        // Note text container (supports marquee clipping)
+        // Note text container
         Item {
           visible: root.hasNote
-          implicitWidth: Math.min(noteLabel.implicitWidth, Style.space(220))
+          implicitWidth: Math.min(noteLabel.implicitWidth, Style.space(260))
           implicitHeight: noteLabel.implicitHeight
           clip: true
 
@@ -490,29 +398,12 @@ BarWidget {
             id: noteLabel
             text: root.displayNote
             color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: (root.fxMode === "scramble" || root.fxMode === "copper")
-              ? (Style.font.monoFamily || (root.bar ? root.bar.fontFamily : ""))
-              : (root.bar ? root.bar.fontFamily : "")
-            font.pixelSize: Style.font.caption
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.body
             font.bold: !root.isSensed
             font.italic: root.isSensed
-            elide: root.fxMode === "marquee" ? Text.ElideNone : Text.ElideRight
-            width: root.fxMode === "marquee" ? implicitWidth : parent.width
-
-            property real scrollX: 0
-            x: root.fxMode === "marquee" && implicitWidth > parent.width ? scrollX : 0
-            SequentialAnimation on scrollX {
-              running: root.fxMode === "marquee" && root.hasNote && noteLabel.implicitWidth > noteLabel.parent.width
-              loops: Animation.Infinite
-              PauseAnimation { duration: 700 }
-              NumberAnimation {
-                from: 0
-                to: -(noteLabel.implicitWidth - noteLabel.parent.width)
-                duration: Math.max(1200, (noteLabel.implicitWidth - noteLabel.parent.width) * 28)
-              }
-              PauseAnimation { duration: 700 }
-              NumberAnimation { to: 0; duration: 600 }
-            }
+            elide: Text.ElideRight
+            width: parent.width
           }
         }
 
@@ -521,8 +412,8 @@ BarWidget {
           visible: !root.hasNote
           text: "+"
           color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.40)
-          font.family: root.bar ? root.bar.fontFamily : ""
-          font.pixelSize: Style.font.caption
+          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
         }
       }
     }
@@ -546,9 +437,11 @@ BarWidget {
       if (root.hudSize === "xl") return 1.80
       if (root.hudSize === "xxl") return 2.35
       if (root.hudSize === "mega") return 3.15
+      if (root.hudSize === "giga") return 4.50
+      if (root.hudSize === "tera") return 6.20
       return 1.0
     }
-    readonly property bool allowOverflow: root.hudSize === "xxl" || root.hudSize === "mega"
+    readonly property bool allowOverflow: root.hudSize === "xxl" || root.hudSize === "mega" || root.hudSize === "giga" || root.hudSize === "tera"
     readonly property real accentAlpha: root.hudColorFx === "low" ? 0.45 : (root.hudColorFx === "mid" ? 0.85 : 1.0)
     readonly property color effectiveAccent: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, accentAlpha)
     readonly property color effectiveTextColor: root.hudColorFx === "high"

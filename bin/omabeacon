@@ -17,10 +17,10 @@ from pathlib import Path
 STATE_DIR = Path.home() / ".local" / "state" / "omarchy" / "omabeacon"
 STATE_FILE = STATE_DIR / "state.json"
 
-VALID_FX = ("clean", "pulse", "copper", "scramble", "marquee", "stealth")
+VALID_FX = ("scramble",)
 VALID_HUD_STYLES = ("glitch", "wire", "laser", "arcade", "cyber", "dos", "radar", "sine", "vhs")
 VALID_HUD_POS = ("top", "center", "bottom")
-VALID_HUD_SIZES = ("sm", "md", "lg", "xl", "xxl", "mega")
+VALID_HUD_SIZES = ("sm", "md", "lg", "xl", "xxl", "mega", "giga", "tera")
 VALID_HUD_COLORFX = ("low", "mid", "high", "flare")
 VALID_HUD_CASE = ("upper", "asis", "lower")
 VALID_GLYPH_POS = ("off", "above", "below")
@@ -55,12 +55,12 @@ SHELL_NAMES = {"bash", "zsh", "fish", "sh", "dash", "nu", "elvish", "tmux"}
 def default_state() -> dict:
     return {
         "version": 1,
-        "fx": "clean",
+        "fx": "scramble",
         "autoSense": True,
         "flashHud": True,
         "hudStyle": "glitch",
         "hudPos": "center",
-        "hudSize": "md",
+        "hudSize": "mega",
         "hudColorFx": "mid",
         "hudCase": "upper",
         "palette": "tokyo",
@@ -82,7 +82,7 @@ def load_state() -> dict:
         return default_state()
 
     base = default_state()
-    base["fx"] = data.get("fx") if data.get("fx") in VALID_FX else "clean"
+    base["fx"] = "scramble"
     base["autoSense"] = True if "autoSense" not in data else bool(data.get("autoSense"))
     base["flashHud"] = bool(data.get("flashHud", True))
     raw_style = data.get("hudStyle")
@@ -90,7 +90,7 @@ def load_state() -> dict:
         raw_style = "glitch"
     base["hudStyle"] = raw_style if raw_style in VALID_HUD_STYLES else "glitch"
     base["hudPos"] = data.get("hudPos") if data.get("hudPos") in VALID_HUD_POS else "center"
-    base["hudSize"] = data.get("hudSize") if data.get("hudSize") in VALID_HUD_SIZES else "md"
+    base["hudSize"] = data.get("hudSize") if data.get("hudSize") in VALID_HUD_SIZES else "mega"
     base["hudColorFx"] = data.get("hudColorFx") if data.get("hudColorFx") in VALID_HUD_COLORFX else "mid"
     base["hudCase"] = data.get("hudCase") if data.get("hudCase") in VALID_HUD_CASE else "upper"
     base["palette"] = data.get("palette") if data.get("palette") in PALETTES else "tokyo"
