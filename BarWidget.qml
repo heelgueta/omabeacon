@@ -97,8 +97,6 @@ BarWidget {
     if (!newWsId || newWsId < 1 || newWsId > 99) return
     var changed = (newWsId !== root.activeWsId)
     root.activeWsId = newWsId
-    root.stealthDimmed = false
-    if (root.fxMode === "stealth") stealthTimer.restart()
 
     if (root.autoSense) {
       senseDebounce.restart()
@@ -120,17 +118,6 @@ BarWidget {
 
   onRawDisplayNoteChanged: {
     triggerScramble(rawDisplayNote)
-  }
-
-  onFxModeChanged: {
-    triggerScramble(rawDisplayNote)
-    if (fxMode === "stealth") {
-      stealthDimmed = false
-      stealthTimer.restart()
-    } else {
-      stealthDimmed = false
-      stealthTimer.stop()
-    }
   }
 
   FileView {
