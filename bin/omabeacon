@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""omabeacon: per-workspace purpose beacons, local process sensing, and state CLI."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from collections import Counter
+from pathlib import Path
+
+STATE_DIR = Path.home() / ".local" / "state" / "omarchy" / "omabeacon"
+STATE_FILE = STATE_DIR / "state.json"
+
+VALID_FX = ("clean", "pulse", "copper", "scramble", "marquee", "stealth")
+
+TERMINAL_CLASSES = {
+    "alacritty",
+    "kitty",
+    "foot",
+    "footclient",
+    "com.mitchellh.ghostty",
+    "ghostty",
+    "org.wezfurlong.wezterm",
+    "wezterm",
+    "st-256color",
+    "urxvt",
+    "xterm",
+}
+
+SHELL_NAMES = {"bash", "zsh", "fish", "sh", "dash", "nu", "elvish", "tmux"}
+
+
+def default_state() -> dict:
+    return {
+        "version": 1,
+        "fx": "clean",
+        "autoSense": False,
+        "flashHud": True,
+        "workspaces": {},
+    }
+
+
+def load_state() -> dict:
+    if not STATE_FILE.exists():
+        return default_state()
+    try:
+        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return default_state()
+    except Exception:
+        return default_state()
+
+    base = default_state()
+    base["fx"] = data.get("fx") if data.get("fx") in VALID_FX else "clean"
+    base["autoSense"] = bool(data.get("autoSense", False))
+    base["flashHud"] = bool(data.get("flashHud", True))
+    ws = data.get("workspaces")
+    base["workspaces"] = ws if isinstance(ws, dict) else {}
+    return base
+
+
+def save_state(state: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix="state-", suffix=".json", dir=str(STATE_DIR))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp_path, STATE_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def normalize_ws(ws: str | int) -> str:
+    val = int(ws)
+    if val < 1 or val > 99:
+        raise ValueError(f"Workspace must be >= 1, got {ws}")
+    return str(val)
+
+
+def read_proc_comm(pid: int) -> str:
+    try:
+        return Path(f"/proc/{pid}/comm").read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def read_proc_cwd_name(pid: int) -> str:
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return ""
+    home = str(Path.home())
+    if cwd == home:
+        return "~"
+    return Path(cwd).name or cwd
+
+
+def read_children(pid: int) -> list[int]:
+    children: list[int] = []
+    task_dir = Path(f"/proc/{pid}/task")
+    try:
+        for tid_dir in task_dir.iterdir():
+            cfile = tid_dir / "children"
+            try:
+                raw = cfile.read_text(encoding="utf-8", errors="replace").strip()
+                if raw:
+                    children.extend(int(x) for x in raw.split() if x.isdigit())
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return children
+
+
+def deepest_interesting_proc(root_pid: int, max_depth: int = 4) -> tuple[str, str]:
+    """Walk child processes of a terminal to find the active foreground command and cwd."""
+    current = root_pid
+    best_comm = read_proc_comm(root_pid)
+    best_cwd = read_proc_cwd_name(root_pid)
+
+    for _ in range(max_depth):
+        kids = read_children(current)
+        if not kids:
+            break
+        # Prefer the most recently spawned child (usually foreground)
+        nxt = kids[-1]
+        comm = read_proc_comm(nxt)
+        cwd = read_proc_cwd_name(nxt)
+        if comm:
+            best_comm = comm
+        if cwd:
+            best_cwd = cwd
+        current = nxt
+
+    return best_comm, best_cwd
+
+
+def active_workspace_id() -> int:
+    try:
+        out = subprocess.check_output(
+            ["hyprctl", "activeworkspace", "-j"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=1.5,
+        )
+        return int(json.loads(out).get("id", 1))
+    except Exception:
+        return 1
+
+
+def sense_workspace(ws_id: int | None = None) -> dict:
+    if ws_id is None:
+        ws_id = active_workspace_id()
+
+    try:
+        out = subprocess.check_output(
+            ["hyprctl", "clients", "-j"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=1.5,
+        )
+        clients = json.loads(out)
+    except Exception:
+        return {"workspace": ws_id, "windowCount": 0, "summary": "", "details": []}
+
+    ws_clients = [c for c in clients if c.get("workspace", {}).get("id") == ws_id]
+    if not ws_clients:
+        return {"workspace": ws_id, "windowCount": 0, "summary": "empty", "details": []}
+
+    term_tags: list[str] = []
+    other_apps: Counter[str] = Counter()
+    details: list[str] = []
+
+    for c in ws_clients:
+        cls = (c.get("class") or c.get("initialClass") or "").strip()
+        cls_low = cls.lower()
+        pid = int(c.get("pid") or 0)
+        title = (c.get("title") or "").strip()
+
+        if cls_low in TERMINAL_CLASSES and pid > 0:
+            comm, cwd = deepest_interesting_proc(pid)
+            if comm in SHELL_NAMES or not comm:
+                tag = cwd if cwd and cwd != "~" else (comm or "term")
+            else:
+                tag = f"{comm}@{cwd}" if cwd and cwd != "~" else comm
+            term_tags.append(tag)
+            details.append(f"term:{tag}")
+        else:
+            short_cls = cls.split(".")[-1] if "." in cls else cls
+            label = short_cls or title[:18] or "win"
+            other_apps[label.lower()] += 1
+            details.append(f"{label.lower()}:{title[:30]}")
+
+    parts: list[str] = []
+    if term_tags:
+        # Deduplicate while preserving order, keep top 3
+        seen: list[str] = []
+        for t in term_tags:
+            if t not in seen:
+                seen.append(t)
+        shown = ", ".join(seen[:3])
+        if len(seen) > 3:
+            shown += f" +{len(seen) - 3}"
+        prefix = f"{len(term_tags)}×term" if len(term_tags) > 1 else "term"
+        parts.append(f"{prefix} ({shown})")
+
+    for app, count in other_apps.most_common(3):
+        parts.append(f"{count}×{app}" if count > 1 else app)
+
+    summary = " + ".join(parts)
+    if len(summary) > 56:
+        summary = summary[:53] + "..."
+
+    return {
+        "workspace": ws_id,
+        "windowCount": len(ws_clients),
+        "summary": summary,
+        "details": details,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="omabeacon")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_set = sub.add_parser("set", help="Set workspace beacon note and optional color")
+    p_set.add_argument("ws")
+    p_set.add_argument("note")
+    p_set.add_argument("--color", default=None)
+
+    p_clear = sub.add_parser("clear", help="Clear workspace beacon")
+    p_clear.add_argument("ws")
+
+    p_fx = sub.add_parser("fx", help="Set lab FX mode")
+    p_fx.add_argument("mode", choices=VALID_FX)
+
+    p_auto = sub.add_parser("autosense", help="Toggle or set local auto-sense fallback")
+    p_auto.add_argument("mode", choices=("on", "off", "toggle"))
+
+    p_hud = sub.add_parser("hud", help="Toggle or set lower-third flash HUD")
+    p_hud.add_argument("mode", choices=("on", "off", "toggle"))
+
+    p_sense = sub.add_parser("sense", help="Locally inspect current workspace windows/processes")
+    p_sense.add_argument("ws", nargs="?", type=int, default=None)
+    p_sense.add_argument("--json", action="store_true")
+
+    p_get = sub.add_parser("get", help="Print state JSON")
+    p_get.add_argument("ws", nargs="?", default=None)
+
+    args = parser.parse_args()
+
+    if args.cmd == "sense":
+        res = sense_workspace(args.ws)
+        if args.json:
+            print(json.dumps(res, ensure_ascii=False))
+        else:
+            print(res["summary"])
+        return 0
+
+    state = load_state()
+
+    if args.cmd == "get":
+        if args.ws is not None:
+            key = normalize_ws(args.ws)
+            print(json.dumps(state["workspaces"].get(key, {}), ensure_ascii=False))
+        else:
+            print(json.dumps(state, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "set":
+        key = normalize_ws(args.ws)
+        note = args.note.strip()
+        if not note:
+            state["workspaces"].pop(key, None)
+        else:
+            entry = state["workspaces"].get(key, {})
+            entry["note"] = note
+            if args.color is not None:
+                if args.color == "":
+                    entry.pop("color", None)
+                else:
+                    entry["color"] = args.color
+            entry["updatedAt"] = int(time.time())
+            state["workspaces"][key] = entry
+        save_state(state)
+        return 0
+
+    if args.cmd == "clear":
+        key = normalize_ws(args.ws)
+        state["workspaces"].pop(key, None)
+        save_state(state)
+        return 0
+
+    if args.cmd == "fx":
+        state["fx"] = args.mode
+        save_state(state)
+        return 0
+
+    if args.cmd == "autosense":
+        if args.mode == "toggle":
+            state["autoSense"] = not state["autoSense"]
+        else:
+            state["autoSense"] = args.mode == "on"
+        save_state(state)
+        return 0
+
+    if args.cmd == "hud":
+        if args.mode == "toggle":
+            state["flashHud"] = not state["flashHud"]
+        else:
+            state["flashHud"] = args.mode == "on"
+        save_state(state)
+        return 0
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

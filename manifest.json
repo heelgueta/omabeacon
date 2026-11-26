@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "heelgueta.omabeacon",
+  "name": "Omabeacon",
+  "version": "1.0.0",
+  "author": "heelgueta",
+  "license": "MIT",
+  "description": "Per-workspace purpose beacons, color tags, local window/process sensing, and demoscene lab FX for Omarchy.",
+  "kinds": [
+    "bar-widget",
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "overlay": "BeaconOverlay.qml"
+  },
+  "barWidget": {
+    "displayName": "Omabeacon",
+    "description": "Workspace purpose beacon & demoscene tag",
+    "category": "Compositor",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}
