@@ -134,14 +134,6 @@ Item {
     loadState()
     root.glyphPickerOpen = false
     root.slotPickerOpen = false
-    openModeWatcher.reload()
-    var modeTxt = (openModeWatcher.text() || "").trim()
-    if (modeTxt === "vault") {
-      Quickshell.execDetached(["rm", "-f", root.home + "/.local/state/omarchy/omabeacon/open_mode"])
-      openVault()
-      root.opened = true
-      return
-    }
     root.vaultMode = false
     var ws = (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id) ? Hyprland.focusedWorkspace.id : 1
     selectWorkspace(ws)
@@ -150,6 +142,23 @@ Item {
       noteInput.forceActiveFocus()
       noteInput.selectAll()
     })
+  }
+
+  IpcHandler {
+    target: "omabeacon"
+    function openVault(): void {
+      if (root.opened && root.vaultMode) {
+        root.dismiss()
+      } else {
+        loadState()
+        root.glyphPickerOpen = false
+        root.opened = true
+        root.openVault()
+      }
+    }
+    function openEdit(): void {
+      root.open("{}")
+    }
   }
 
   function openVault() {
@@ -327,11 +336,6 @@ Item {
         }
       }
     }
-  }
-
-  FileView {
-    id: openModeWatcher
-    path: root.home + "/.local/state/omarchy/omabeacon/open_mode"
   }
 
   Process {
@@ -1836,52 +1840,83 @@ Item {
                 spacing: Style.space(14)
 
                 delegate: Item {
-                  readonly property bool selected: index === root.vaultIndex
+                  readonly property int dist: index - root.vaultIndex
+                  readonly property int absDist: Math.abs(dist)
+                  readonly property bool selected: dist === 0
                   readonly property color itemCol: modelData.color || root.activeAccent
                   readonly property string itemTitle: ((modelData.glyph ? modelData.glyph + " " : "") + (modelData.note || "UNTITLED")).toUpperCase()
+                  readonly property real arcOffset: Math.min(Style.space(120), Math.pow(absDist, 1.55) * Style.space(26))
                   width: wheelList.width
-                  height: selected ? Style.space(86) : Style.space(52)
-                  opacity: selected ? 1.0 : Math.max(0.22, 0.72 - Math.abs(index - root.vaultIndex) * 0.18)
+                  height: selected ? Style.space(96) : Style.space(58)
+                  opacity: selected ? 1.0 : Math.max(0.20, 0.78 - absDist * 0.20)
+                  scale: selected ? 1.0 : Math.max(0.68, 0.88 - absDist * 0.07)
 
                   Behavior on opacity { NumberAnimation { duration: 120 } }
+                  Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
-                  // Cyan & Magenta RGB-split ghosts on selected arcade wheel item
-                  Text {
-                    visible: selected
+                  // Curved Arcade Marquee Plate
+                  Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
-                    x: -4; y: -2
-                    width: parent.width - Style.space(12)
-                    text: itemTitle
-                    color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
-                    font.family: root.monoFamily
-                    font.pixelSize: Style.space(34)
-                    font.bold: true
-                    elide: Text.ElideRight
-                  }
-                  Text {
-                    visible: selected
-                    anchors.verticalCenter: parent.verticalCenter
-                    x: 4; y: 2
-                    width: parent.width - Style.space(12)
-                    text: itemTitle
-                    color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
-                    font.family: root.monoFamily
-                    font.pixelSize: Style.space(34)
-                    font.bold: true
-                    elide: Text.ElideRight
-                  }
+                    x: arcOffset
+                    width: parent.width - arcOffset - Style.space(8)
+                    height: selected ? Style.space(84) : Style.space(50)
+                    radius: Style.space(8)
+                    color: selected
+                      ? Qt.rgba(itemCol.r, itemCol.g, itemCol.b, 0.20)
+                      : Qt.rgba(0.08, 0.09, 0.13, 0.72)
+                    border.width: selected ? 2.5 : 1
+                    border.color: selected ? itemCol : Qt.rgba(itemCol.r, itemCol.g, itemCol.b, 0.32)
 
-                  Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    x: selected ? 0 : Style.space(18)
-                    width: parent.width - Style.space(24)
-                    text: itemTitle
-                    color: selected ? Color.foreground : itemCol
-                    font.family: root.monoFamily
-                    font.pixelSize: selected ? Style.space(34) : Style.space(20)
-                    font.bold: true
-                    font.letterSpacing: selected ? 2.5 : 1.0
-                    elide: Text.ElideRight
+                    Behavior on x { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+
+                    // Left neon bar
+                    Rectangle {
+                      anchors.left: parent.left
+                      anchors.top: parent.top
+                      anchors.bottom: parent.bottom
+                      width: selected ? 6 : 3
+                      radius: 2
+                      color: itemCol
+                    }
+
+                    // Cyan & Magenta RGB-split ghosts on selected arcade wheel item
+                    Text {
+                      visible: selected
+                      anchors.verticalCenter: parent.verticalCenter
+                      x: Style.space(18) - 4; y: -2
+                      width: parent.width - Style.space(32)
+                      text: itemTitle
+                      color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
+                      font.family: root.monoFamily
+                      font.pixelSize: Style.space(32)
+                      font.bold: true
+                      elide: Text.ElideRight
+                    }
+                    Text {
+                      visible: selected
+                      anchors.verticalCenter: parent.verticalCenter
+                      x: Style.space(18) + 4; y: 2
+                      width: parent.width - Style.space(32)
+                      text: itemTitle
+                      color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
+                      font.family: root.monoFamily
+                      font.pixelSize: Style.space(32)
+                      font.bold: true
+                      elide: Text.ElideRight
+                    }
+
+                    Text {
+                      anchors.verticalCenter: parent.verticalCenter
+                      x: Style.space(18)
+                      width: parent.width - Style.space(32)
+                      text: itemTitle
+                      color: selected ? Color.foreground : itemCol
+                      font.family: root.monoFamily
+                      font.pixelSize: selected ? Style.space(32) : Style.space(20)
+                      font.bold: true
+                      font.letterSpacing: selected ? 2.2 : 1.0
+                      elide: Text.ElideRight
+                    }
                   }
 
                   MouseArea {
