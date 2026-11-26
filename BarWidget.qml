@@ -793,21 +793,23 @@ BarWidget {
         font.bold: true
       }
 
+      // Optional Emoji / Glyph ABOVE (anchored to hudMainCol so text stays dead-center)
+      Text {
+        visible: root.wsGlyph !== "" && root.glyphPos === "above"
+        anchors.horizontalCenter: hudMainCol.horizontalCenter
+        anchors.bottom: hudMainCol.top
+        anchors.bottomMargin: Style.space(8)
+        text: root.wsGlyph
+        color: flashHudWindow.effectiveAccent
+        font.pixelSize: Math.round(Style.space(34) * flashHudWindow.sizeMult)
+      }
+
       // Main HUD Content
       ColumnLayout {
         id: hudMainCol
         anchors.centerIn: parent
         spacing: Style.space(6)
         width: flashHudWindow.allowOverflow ? implicitWidth : (hudCard.width - Style.space(48))
-
-        // Optional Emoji / Glyph ABOVE
-        Text {
-          visible: root.wsGlyph !== "" && root.glyphPos === "above"
-          Layout.alignment: Qt.AlignHCenter
-          text: root.wsGlyph
-          color: flashHudWindow.effectiveAccent
-          font.pixelSize: Math.round(Style.space(34) * flashHudWindow.sizeMult)
-        }
 
         // Telemetry micro-header
         Text {
@@ -924,15 +926,17 @@ BarWidget {
             elide: flashHudWindow.allowOverflow ? Text.ElideNone : Text.ElideRight
           }
         }
+      }
 
-        // Optional Emoji / Glyph BELOW
-        Text {
-          visible: root.wsGlyph !== "" && root.glyphPos === "below"
-          Layout.alignment: Qt.AlignHCenter
-          text: root.wsGlyph
-          color: flashHudWindow.effectiveAccent
-          font.pixelSize: Math.round(Style.space(34) * flashHudWindow.sizeMult)
-        }
+      // Optional Emoji / Glyph BELOW (anchored to hudMainCol so text stays dead-center)
+      Text {
+        visible: root.wsGlyph !== "" && root.glyphPos === "below"
+        anchors.horizontalCenter: hudMainCol.horizontalCenter
+        anchors.top: hudMainCol.bottom
+        anchors.topMargin: Style.space(8)
+        text: root.wsGlyph
+        color: flashHudWindow.effectiveAccent
+        font.pixelSize: Math.round(Style.space(34) * flashHudWindow.sizeMult)
       }
     }
   }

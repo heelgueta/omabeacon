@@ -14,6 +14,7 @@ Item {
   property var manifest: null
 
   readonly property string home: Quickshell.env("HOME")
+  readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
   readonly property string stateFilePath: home + "/.local/state/omarchy/omabeacon/state.json"
   readonly property string cliPath: Qt.resolvedUrl("bin/omabeacon").toString().replace(/^file:\/\//, "")
 
@@ -24,7 +25,56 @@ Item {
   readonly property var hudColorFxs: ["low", "mid", "high", "flare"]
   readonly property var hudCases: ["upper", "asis", "lower"]
   readonly property var glyphPositions: ["off", "above", "below"]
-  readonly property var quickGlyphs: ["⚡", "🔥", "🧪", "💀", "👾", "🚀", "🛠", "🧠", "📡", "☣", "◈", "✦"]
+  readonly property var iconGlyphs: [
+    { e: "󰆍", k: "terminal bash shell console cli", t: "icons" },
+    { e: "󰊢", k: "git branch commit merge", t: "icons" },
+    { e: "󰊤", k: "github repo code", t: "icons" },
+    { e: "󰣇", k: "arch linux distro", t: "icons" },
+    { e: "󰌽", k: "linux tux kernel os", t: "icons" },
+    { e: "󰇧", k: "docker container whale", t: "icons" },
+    { e: "󱃾", k: "kubernetes k8s cluster pods", t: "icons" },
+    { e: "󰒍", k: "server rack backend host", t: "icons" },
+    { e: "󰆼", k: "database sql postgres data", t: "icons" },
+    { e: "󰖟", k: "web browser globe internet", t: "icons" },
+    { e: "󰛳", k: "network lan ssh wifi", t: "icons" },
+    { e: "󰖂", k: "cloud sync aws", t: "icons" },
+    { e: "󰄨", k: "code brackets dev", t: "icons" },
+    { e: "󰃖", k: "bug debug fix issue", t: "icons" },
+    { e: "󰙨", k: "lab flask test experiment", t: "icons" },
+    { e: "󰚩", k: "ai robot bot llm agent", t: "icons" },
+    { e: "󰘚", k: "cpu chip hardware perf", t: "icons" },
+    { e: "󰒓", k: "settings gear config", t: "icons" },
+    { e: "󰌾", k: "lock security auth key", t: "icons" },
+    { e: "󰍉", k: "search find grep", t: "icons" },
+    { e: "󰑐", k: "sync refresh loop", t: "icons" },
+    { e: "󰝚", k: "music audio spotify", t: "icons" },
+    { e: "󰈙", k: "docs file notes markdown", t: "icons" },
+    { e: "󰊴", k: "game controller arcade", t: "icons" },
+    { e: "󰏗", k: "package box build", t: "icons" },
+    { e: "󰗶", k: "fire hot flame", t: "icons" },
+    { e: "󰀦", k: "alert warning danger", t: "icons" },
+    { e: "󰓅", k: "speedometer fast perf", t: "icons" },
+    { e: "󰐊", k: "play run start", t: "icons" },
+    { e: "󰚌", k: "skull dead danger", t: "icons" },
+    { e: "󰨞", k: "vscode editor ide", t: "icons" },
+    { e: "󰡨", k: "python snake script", t: "icons" },
+    { e: "󰌞", k: "javascript js node", t: "icons" },
+    { e: "󱘗", k: "rust cargo crab", t: "icons" },
+    { e: "󰟓", k: "golang go", t: "icons" },
+    { e: "󰂚", k: "bell notification", t: "icons" },
+    { e: "󰄬", k: "check done ok", t: "icons" },
+    { e: "󰅖", k: "close x cross", t: "icons" },
+    { e: "󰁔", k: "arrow right next", t: "icons" },
+    { e: "󰓎", k: "star favorite", t: "icons" },
+    { e: "󰄛", k: "cat kitty", t: "icons" },
+    { e: "󰙀", k: "eye watch monitor", t: "icons" },
+    { e: "◈", k: "diamond geometric glyph", t: "icons" },
+    { e: "✦", k: "sparkle star glyph", t: "icons" },
+    { e: "⌘", k: "command loop symbol", t: "icons" },
+    { e: "⚡", k: "lightning bolt zap fast", t: "icons" },
+    { e: "☣", k: "biohazard toxic", t: "icons" },
+    { e: "☢", k: "radioactive nuke", t: "icons" }
+  ]
   readonly property var paletteNames: ["tokyo", "neon", "pastel", "mono", "fire"]
   readonly property var palettes: ({
     "tokyo": ["#f7768e", "#ff9e64", "#e0af68", "#9ece6a", "#73daca", "#7dcfff", "#7aa2f7", "#bb9af7", "#ff79c6", "#c0caf5"],
@@ -49,6 +99,10 @@ Item {
   property string glyphPos: "above"
   property string currentKeybind: "SUPER + N"
   property bool editingKeybind: false
+  property bool glyphPickerOpen: false
+  property string glyphTab: "all"
+  property string glyphFilter: ""
+  property var emojiList: []
   property bool autoSense: true
   property bool flashHud: true
   property string sensedSummary: ""
@@ -69,6 +123,7 @@ Item {
 
   function open(payloadJson) {
     loadState()
+    root.glyphPickerOpen = false
     var ws = (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id) ? Hyprland.focusedWorkspace.id : 1
     selectWorkspace(ws)
     root.opened = true
@@ -162,6 +217,57 @@ Item {
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
+  }
+
+  ListModel { id: glyphGridModel }
+
+  FileView {
+    id: emojiFileWatcher
+    path: root.omarchyPath + "/shell/plugins/emojis/emojis.json"
+    onLoaded: {
+      var raw = emojiFileWatcher.text()
+      if (!raw) return
+      try {
+        root.emojiList = JSON.parse(raw)
+        if (root.glyphPickerOpen) root.rebuildGlyphGrid()
+      } catch (e) {}
+    }
+  }
+
+  function openGlyphPicker() {
+    root.glyphFilter = ""
+    glyphSearchInput.text = ""
+    root.glyphPickerOpen = true
+    root.rebuildGlyphGrid()
+    Qt.callLater(function() { glyphSearchInput.forceActiveFocus() })
+  }
+
+  function rebuildGlyphGrid() {
+    glyphGridModel.clear()
+    var q = root.glyphFilter.trim().toLowerCase()
+    var limit = 180
+    var count = 0
+
+    if (root.glyphTab === "all" || root.glyphTab === "icons") {
+      for (var i = 0; i < root.iconGlyphs.length && count < limit; i++) {
+        var ic = root.iconGlyphs[i]
+        if (q === "" || ic.k.indexOf(q) !== -1 || ic.e === q) {
+          glyphGridModel.append({ glyph: ic.e, keywords: ic.k })
+          count++
+        }
+      }
+    }
+
+    if (root.glyphTab === "all" || root.glyphTab === "emoji") {
+      for (var j = 0; j < root.emojiList.length && count < limit; j++) {
+        var em = root.emojiList[j]
+        var kw = em.k ? String(em.k).toLowerCase() : ""
+        if (q === "" || kw.indexOf(q) !== -1 || em.e === q) {
+          glyphGridModel.append({ glyph: em.e, keywords: kw })
+          count++
+        }
+      }
+    }
   }
 
   Process {
@@ -517,10 +623,10 @@ Item {
             Item { Layout.fillWidth: true }
           }
 
-          // Emoji / Glyph picker + Position (off | above | below)
+          // Emoji / Glyph picker button + Position (off | above | below)
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.space(4)
+            spacing: Style.space(6)
 
             Text {
               text: "GLYPH"
@@ -530,33 +636,57 @@ Item {
               font.bold: true
             }
 
-            Repeater {
-              model: root.quickGlyphs
-              delegate: Rectangle {
-                readonly property var wsObj: (root.workspacesData && root.workspacesData[String(root.editWsId)]) ? root.workspacesData[String(root.editWsId)] : null
-                readonly property bool active: !!(wsObj && wsObj.glyph === modelData)
-                width: Style.space(22)
-                height: Style.space(22)
-                radius: Style.space(4)
-                color: active
-                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.28)
-                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
-                border.width: 1
-                border.color: active ? root.activeAccent : "transparent"
+            Rectangle {
+              id: pickGlyphBtn
+              readonly property var wsObj: (root.workspacesData && root.workspacesData[String(root.editWsId)]) ? root.workspacesData[String(root.editWsId)] : null
+              readonly property string curGlyph: (wsObj && wsObj.glyph) ? String(wsObj.glyph) : ""
+              radius: Style.space(4)
+              color: curGlyph !== ""
+                ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.22)
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+              border.width: 1
+              border.color: curGlyph !== "" ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
+              implicitWidth: pickGlyphLbl.implicitWidth + Style.space(14)
+              implicitHeight: Style.space(22)
 
-                Text {
-                  anchors.centerIn: parent
-                  text: modelData
-                  font.pixelSize: Style.font.caption
-                }
+              Text {
+                id: pickGlyphLbl
+                anchors.centerIn: parent
+                text: pickGlyphBtn.curGlyph !== "" ? (pickGlyphBtn.curGlyph + "  Change...") : "+ Pick Emoji / Icon..."
+                color: pickGlyphBtn.curGlyph !== "" ? root.activeAccent : root.foreground
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
 
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: {
-                    Quickshell.execDetached([root.cliPath, "glyph", String(root.editWsId), active ? "" : modelData, "--demo"])
-                    noteInput.forceActiveFocus()
-                  }
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.openGlyphPicker()
+              }
+            }
+
+            Rectangle {
+              visible: pickGlyphBtn.curGlyph !== ""
+              radius: Style.space(4)
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+              implicitWidth: clearGlyphLbl.implicitWidth + Style.space(10)
+              implicitHeight: Style.space(22)
+
+              Text {
+                id: clearGlyphLbl
+                anchors.centerIn: parent
+                text: "Clear"
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.6)
+                font.family: root.monoFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  Quickshell.execDetached([root.cliPath, "glyph", String(root.editWsId), "", "--demo"])
+                  noteInput.forceActiveFocus()
                 }
               }
             }
@@ -1090,6 +1220,187 @@ Item {
                       root.selectWorkspace(wsNum)
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Compact Searchable Emoji / Icon Picker Popup
+      Rectangle {
+        id: glyphPickerCard
+        visible: root.glyphPickerOpen
+        width: Math.min(Style.space(420), parent.width - Style.gapsOut * 4)
+        height: Math.min(Style.space(380), parent.height - Style.gapsOut * 4)
+        anchors.centerIn: parent
+        radius: Style.cornerRadius
+        color: root.background
+        border.width: 2
+        border.color: root.activeAccent
+        z: 10
+
+        MouseArea { anchors.fill: parent }
+
+        ColumnLayout {
+          anchors.fill: parent
+          anchors.margins: Style.space(12)
+          spacing: Style.space(8)
+
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
+            Text {
+              text: "PICK EMOJI / ICON"
+              color: root.activeAccent
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Repeater {
+              model: ["all", "emoji", "icons"]
+              delegate: Rectangle {
+                readonly property bool active: root.glyphTab === modelData
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+                implicitWidth: tabLbl.implicitWidth + Style.space(10)
+                implicitHeight: Style.space(20)
+
+                Text {
+                  id: tabLbl
+                  anchors.centerIn: parent
+                  text: modelData
+                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    root.glyphTab = modelData
+                    root.rebuildGlyphGrid()
+                    glyphSearchInput.forceActiveFocus()
+                  }
+                }
+              }
+            }
+
+            Rectangle {
+              radius: Style.space(4)
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+              implicitWidth: closePickLbl.implicitWidth + Style.space(10)
+              implicitHeight: Style.space(20)
+              Text {
+                id: closePickLbl
+                anchors.centerIn: parent
+                text: "✕"
+                color: root.foreground
+                font.pixelSize: Style.font.caption
+              }
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  root.glyphPickerOpen = false
+                  noteInput.forceActiveFocus()
+                }
+              }
+            }
+          }
+
+          // Search box
+          Rectangle {
+            Layout.fillWidth: true
+            height: Style.space(32)
+            radius: Style.space(6)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+            border.width: 1
+            border.color: root.activeAccent
+
+            TextInput {
+              id: glyphSearchInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              verticalAlignment: TextInput.AlignVCenter
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              onTextChanged: {
+                root.glyphFilter = text
+                root.rebuildGlyphGrid()
+              }
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                  event.accepted = true
+                  root.glyphPickerOpen = false
+                  noteInput.forceActiveFocus()
+                } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && glyphGridModel.count > 0) {
+                  event.accepted = true
+                  var first = glyphGridModel.get(0).glyph
+                  Quickshell.execDetached([root.cliPath, "glyph", String(root.editWsId), first, "--demo"])
+                  root.glyphPickerOpen = false
+                  noteInput.forceActiveFocus()
+                }
+              }
+
+              Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: "Search (fire, git, code, skull, docker...)"
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
+                font: glyphSearchInput.font
+                visible: glyphSearchInput.text === ""
+              }
+            }
+          }
+
+          // Scrollable Grid of Emojis + Nerd-Font Icons
+          GridView {
+            id: glyphGrid
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            cellWidth: Style.space(42)
+            cellHeight: Style.space(42)
+            model: glyphGridModel
+
+            delegate: Rectangle {
+              width: glyphGrid.cellWidth - 4
+              height: glyphGrid.cellHeight - 4
+              radius: Style.space(6)
+              color: cellMouse.containsMouse
+                ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.28)
+                : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+              border.width: cellMouse.containsMouse ? 1 : 0
+              border.color: root.activeAccent
+
+              Text {
+                anchors.centerIn: parent
+                text: glyph
+                color: root.foreground
+                font.pixelSize: Style.space(20)
+              }
+
+              MouseArea {
+                id: cellMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  Quickshell.execDetached([root.cliPath, "glyph", String(root.editWsId), glyph, "--demo"])
+                  root.glyphPickerOpen = false
+                  noteInput.forceActiveFocus()
                 }
               }
             }
