@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -387,6 +388,7 @@ def build_relaunch_cmd(client: dict) -> dict:
     cls = (client.get("class") or client.get("initialClass") or "").strip()
     cls_low = cls.lower()
     pid = int(client.get("pid") or 0)
+    addr = str(client.get("address") or "")
     title = (client.get("title") or "").strip()
 
     if cls_low in TERMINAL_CLASSES and pid > 0:
@@ -418,14 +420,39 @@ def build_relaunch_cmd(client: dict) -> dict:
                 launch = f"foot --working-directory={shlex.quote(cwd)}"
             else:
                 launch = term_bin
-        return {"kind": "term", "class": cls, "title": title, "cwd": cwd, "comm": comm, "exec": launch}
+        return {"kind": "term", "address": addr, "pid": pid, "class": cls, "title": title, "cwd": cwd, "comm": comm, "exec": launch}
 
     if cls_low in ("chromium", "google-chrome", "brave-browser", "firefox"):
         launch = cls_low.split("-")[0] if cls_low != "brave-browser" else "brave"
     else:
         cmd_parts = read_proc_cmdline(pid) if pid > 0 else []
         launch = shlex.quote(cmd_parts[0]) if cmd_parts else cls_low
-    return {"kind": "app", "class": cls, "title": title, "cwd": "", "comm": cls_low, "exec": launch}
+    return {"kind": "app", "address": addr, "pid": pid, "class": cls, "title": title, "cwd": "", "comm": cls_low, "exec": launch}
+
+
+def collect_terminal_workload_pids(clients: list[dict]) -> list[int]:
+    """Collect descendant PIDs running inside terminal shells so they can be paused via SIGSTOP."""
+    my_pid = os.getpid()
+    pids: list[int] = []
+    for c in clients:
+        cls_low = (c.get("class") or c.get("initialClass") or "").strip().lower()
+        root_pid = int(c.get("pid") or 0)
+        if cls_low not in TERMINAL_CLASSES or root_pid <= 0:
+            continue
+        # Immediate children of the terminal emulator are login shells
+        shells = read_children(root_pid)
+        queue = []
+        for sh_pid in shells:
+            queue.extend(read_children(sh_pid))
+        visited: set[int] = set()
+        while queue:
+            cur = queue.pop(0)
+            if cur in visited or cur == my_pid or cur <= 1:
+                continue
+            visited.add(cur)
+            pids.append(cur)
+            queue.extend(read_children(cur))
+    return pids
 
 
 def list_vault() -> dict:
@@ -476,9 +503,14 @@ def freeze_workspace(state: dict) -> dict:
     glyph = ws_entry.get("glyph") or ""
 
     windows = [build_relaunch_cmd(c) for c in clients]
+    special_ws = f"special:cryo_{vid}"
+    paused_pids = collect_terminal_workload_pids(clients)
+
     payload = {
         "id": vid,
         "origWs": ws_id,
+        "specialWs": special_ws,
+        "pausedPids": paused_pids,
         "note": note,
         "color": color,
         "glyph": glyph,
@@ -490,15 +522,22 @@ def freeze_workspace(state: dict) -> dict:
     }
     meta_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    # Close all windows on this workspace using Omarchy's Lua dispatcher
+    # Park all live windows into hidden special workspace (0 state loss, invisible to bar & Super+Tab)
     for c in clients:
         addr = c.get("address")
         if addr:
             subprocess.run(
-                ["hyprctl", "dispatch", f'hl.dsp.window.close({{ window = "address:{addr}" }})'],
+                ["hyprctl", "dispatch", f'hl.dsp.window.move({{ window = "address:{addr}", workspace = "{special_ws}", follow = false }})'],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+
+    # Smart CPU freeze: pause background terminal workloads via SIGSTOP
+    for p in paused_pids:
+        try:
+            os.kill(p, signal.SIGSTOP)
+        except OSError:
+            pass
 
     # Clear workspace slot note so it is freshly available
     state.get("workspaces", {}).pop(ws_key, None)
@@ -526,14 +565,17 @@ def thaw_workspace(state: dict, vid: str, target_ws: int | None, keep: bool) -> 
         else:
             return 2, {"status": "occupied", "origWs": orig_ws, "free": free, "occupied": occ}
 
-    # Switch to target workspace using Omarchy's Lua dispatcher and restore omabeacon metadata
-    subprocess.run(
-        ["hyprctl", "dispatch", f'hl.dsp.focus({{ workspace = "{target_ws}" }})'],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(0.05)
+    # 1. Resume any SIGSTOPped terminal child workloads
+    for p in payload.get("pausedPids", []):
+        try:
+            os.kill(int(p), signal.SIGCONT)
+        except OSError:
+            pass
 
+    # 2. Check which parked windows are still alive in Hyprland
+    alive_addrs = {str(c.get("address")) for c in clients if c.get("address")}
+
+    # 3. Restore omabeacon metadata on target_ws
     entry: dict = {
         "note": payload.get("note", f"WS {target_ws}"),
         "color": payload.get("color", ""),
@@ -545,9 +587,31 @@ def thaw_workspace(state: dict, vid: str, target_ws: int | None, keep: bool) -> 
         entry.pop("color", None)
     state.setdefault("workspaces", {})[str(target_ws)] = entry
 
+    # 4. Move alive parked windows straight into target_ws; fallback-spawn only if dead (e.g. after reboot)
+    dead_cmds: list[str] = []
     for win in payload.get("windows", []):
-        cmd = win.get("exec")
-        if cmd:
+        addr = str(win.get("address") or "")
+        if addr and addr in alive_addrs:
+            subprocess.run(
+                ["hyprctl", "dispatch", f'hl.dsp.window.move({{ window = "address:{addr}", workspace = "{target_ws}", follow = false }})'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            cmd = win.get("exec")
+            if cmd:
+                dead_cmds.append(cmd)
+
+    # 5. Focus target_ws
+    subprocess.run(
+        ["hyprctl", "dispatch", f'hl.dsp.focus({{ workspace = "{target_ws}" }})'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    if dead_cmds:
+        time.sleep(0.05)
+        for cmd in dead_cmds:
             subprocess.Popen(
                 cmd,
                 shell=True,
@@ -889,6 +953,20 @@ def main() -> int:
         if meta_path.exists():
             try:
                 d = json.loads(meta_path.read_text(encoding="utf-8"))
+                for p in d.get("pausedPids", []):
+                    try:
+                        os.kill(int(p), signal.SIGCONT)
+                    except OSError:
+                        pass
+                alive_addrs = {str(c.get("address")) for c in get_clients() if c.get("address")}
+                for win in d.get("windows", []):
+                    addr = str(win.get("address") or "")
+                    if addr and addr in alive_addrs:
+                        subprocess.run(
+                            ["hyprctl", "dispatch", f'hl.dsp.window.close({{ window = "address:{addr}" }})'],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
                 if d.get("thumb"):
                     Path(d["thumb"]).unlink(missing_ok=True)
             except Exception:
