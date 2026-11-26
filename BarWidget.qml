@@ -32,6 +32,7 @@ BarWidget {
   property string hudPos: "center"
   property string hudSize: "md"
   property string hudColorFx: "mid"
+  property string hudCase: "upper"
   property int hudPreviewSeq: -1
   property int pendingAutoHudWsId: -1
   property string sensedText: ""
@@ -160,6 +161,7 @@ BarWidget {
       root.hudPos = data.hudPos || "center"
       root.hudSize = data.hudSize || "md"
       root.hudColorFx = data.hudColorFx || "mid"
+      root.hudCase = data.hudCase || "upper"
       var seq = parseInt(data.hudPreviewSeq || 0)
       var shouldDemo = (root.hudPreviewSeq !== -1 && seq !== root.hudPreviewSeq)
       root.hudPreviewSeq = seq
@@ -872,7 +874,9 @@ BarWidget {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: {
-              var base = root.hudDisplayText.toUpperCase()
+              var base = root.hudDisplayText
+              if (root.hudCase === "upper") base = base.toUpperCase()
+              else if (root.hudCase === "lower") base = base.toLowerCase()
               if (root.hudStyle === "dos") return base + " █"
               return base
             }

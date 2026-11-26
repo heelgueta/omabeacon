@@ -21,6 +21,7 @@ VALID_HUD_STYLES = ("glitch", "wire", "laser", "arcade", "cyber", "dos", "radar"
 VALID_HUD_POS = ("top", "center", "bottom")
 VALID_HUD_SIZES = ("sm", "md", "lg", "xl", "xxl", "mega")
 VALID_HUD_COLORFX = ("low", "mid", "high", "flare")
+VALID_HUD_CASE = ("upper", "asis", "lower")
 
 TERMINAL_CLASSES = {
     "alacritty",
@@ -49,6 +50,7 @@ def default_state() -> dict:
         "hudPos": "center",
         "hudSize": "md",
         "hudColorFx": "mid",
+        "hudCase": "upper",
         "hudPreviewSeq": 0,
         "workspaces": {},
     }
@@ -75,6 +77,7 @@ def load_state() -> dict:
     base["hudPos"] = data.get("hudPos") if data.get("hudPos") in VALID_HUD_POS else "center"
     base["hudSize"] = data.get("hudSize") if data.get("hudSize") in VALID_HUD_SIZES else "md"
     base["hudColorFx"] = data.get("hudColorFx") if data.get("hudColorFx") in VALID_HUD_COLORFX else "mid"
+    base["hudCase"] = data.get("hudCase") if data.get("hudCase") in VALID_HUD_CASE else "upper"
     base["hudPreviewSeq"] = int(data.get("hudPreviewSeq", 0))
     ws = data.get("workspaces")
     base["workspaces"] = ws if isinstance(ws, dict) else {}
@@ -283,6 +286,10 @@ def main() -> int:
     p_hudcolor.add_argument("colorfx", choices=VALID_HUD_COLORFX)
     p_hudcolor.add_argument("--demo", action="store_true")
 
+    p_hudcase = sub.add_parser("hudcase", help="Set flash HUD text casing and optionally trigger demo")
+    p_hudcase.add_argument("casing", choices=VALID_HUD_CASE)
+    p_hudcase.add_argument("--demo", action="store_true")
+
     sub.add_parser("demo", help="Trigger a live flash HUD demo preview")
 
     p_sense = sub.add_parser("sense", help="Locally inspect current workspace windows/processes")
@@ -383,6 +390,14 @@ def main() -> int:
 
     if args.cmd == "hudcolor":
         state["hudColorFx"] = args.colorfx
+        if args.demo:
+            state["flashHud"] = True
+            state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "hudcase":
+        state["hudCase"] = args.casing
         if args.demo:
             state["flashHud"] = True
             state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1

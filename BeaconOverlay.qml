@@ -22,6 +22,7 @@ Item {
   readonly property var hudPositions: ["top", "center", "bottom"]
   readonly property var hudSizes: ["sm", "md", "lg", "xl", "xxl", "mega"]
   readonly property var hudColorFxs: ["low", "mid", "high", "flare"]
+  readonly property var hudCases: ["upper", "asis", "lower"]
   readonly property var palette: [
     "#7aa2f7", // 1: electric blue
     "#bb9af7", // 2: neon violet
@@ -43,6 +44,7 @@ Item {
   property string hudPos: "center"
   property string hudSize: "md"
   property string hudColorFx: "mid"
+  property string hudCase: "upper"
   property bool autoSense: true
   property bool flashHud: true
   property string sensedSummary: ""
@@ -149,6 +151,7 @@ Item {
       root.hudPos = data.hudPos || "center"
       root.hudSize = data.hudSize || "md"
       root.hudColorFx = data.hudColorFx || "mid"
+      root.hudCase = data.hudCase || "upper"
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
     } catch (e) {}
@@ -604,6 +607,48 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            Text {
+              text: "CASE"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+              font.family: root.monoFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Repeater {
+              model: root.hudCases
+              delegate: Rectangle {
+                readonly property bool active: root.hudCase === modelData
+                radius: Style.space(4)
+                color: active
+                  ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+                border.width: 1
+                border.color: active ? root.activeAccent : "transparent"
+                implicitWidth: hudCaseLabel.implicitWidth + Style.space(10)
+                implicitHeight: Style.space(22)
+
+                Text {
+                  id: hudCaseLabel
+                  anchors.centerIn: parent
+                  text: modelData
+                  color: active ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.7)
+                  font.family: root.monoFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: active
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    Quickshell.execDetached([root.cliPath, "hudcase", modelData, "--demo"])
+                    noteInput.forceActiveFocus()
+                  }
+                }
+              }
+            }
           }
 
           // Lab FX + Toggles
