@@ -406,22 +406,23 @@ Item {
 
             // Lock workspace color against palette switches
             Rectangle {
+              id: lockBtn
               readonly property var wsObj: (root.workspacesData && root.workspacesData[String(root.editWsId)]) ? root.workspacesData[String(root.editWsId)] : null
               readonly property bool isLocked: !!(wsObj && wsObj.lockedColor)
               radius: Style.space(4)
-              color: isLocked
+              color: lockBtn.isLocked
                 ? Qt.rgba(root.activeAccent.r, root.activeAccent.g, root.activeAccent.b, 0.25)
                 : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
               border.width: 1
-              border.color: isLocked ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+              border.color: lockBtn.isLocked ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
               implicitWidth: lockLabel.implicitWidth + Style.space(10)
               implicitHeight: Style.space(22)
 
               Text {
                 id: lockLabel
                 anchors.centerIn: parent
-                text: isLocked ? "🔒 Locked" : "🔓 Auto"
-                color: isLocked ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.6)
+                text: lockBtn.isLocked ? "🔒 Locked" : "🔓 Auto"
+                color: lockBtn.isLocked ? root.activeAccent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.6)
                 font.family: root.monoFamily
                 font.pixelSize: Style.font.caption
               }
