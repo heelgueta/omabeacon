@@ -134,6 +134,18 @@ Item {
     loadState()
     root.glyphPickerOpen = false
     root.slotPickerOpen = false
+    var isVault = false
+    if (payloadJson && typeof payloadJson === "string") {
+      try {
+        var parsed = JSON.parse(payloadJson)
+        if (parsed && parsed.mode === "vault") isVault = true
+      } catch (e) {}
+    }
+    if (isVault) {
+      root.opened = true
+      openVault()
+      return
+    }
     root.vaultMode = false
     var ws = (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id) ? Hyprland.focusedWorkspace.id : 1
     selectWorkspace(ws)
@@ -1363,7 +1375,7 @@ Item {
                   cursorShape: Qt.PointingHandCursor
                   onClicked: function(mouse) {
                     if (mouse.modifiers & Qt.ShiftModifier) {
-                      Quickshell.execDetached(["hyprctl", "dispatch", "workspace", String(wsNum)])
+                      Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({ workspace = "' + String(wsNum) + '" })'])
                       root.dismiss()
                     } else {
                       root.selectWorkspace(wsNum)
