@@ -29,6 +29,7 @@ BarWidget {
   property bool autoSense: true
   property bool flashHud: true
   property string hudStyle: "brutal"
+  property string hudPos: "center"
   property int hudPreviewSeq: -1
   property int pendingAutoHudWsId: -1
   property string sensedText: ""
@@ -81,13 +82,9 @@ BarWidget {
     root.hudVisible = true
     root.hudScrambleTick = 0
     root.hudTargetText = text
-    if (root.hudStyle === "banner" || root.hudStyle === "splat" || root.hudStyle === "crt" || root.hudStyle === "brutal" || root.fxMode === "scramble" || root.fxMode === "copper") {
-      root.hudDisplayText = text
-      hudScrambleTimer.restart()
-    } else {
-      root.hudDisplayText = text
-    }
-    hudHideTimer.interval = (root.hudStyle === "brutal" || root.hudStyle === "splat") ? 420 : 520
+    root.hudDisplayText = text
+    hudScrambleTimer.restart()
+    hudHideTimer.interval = (root.hudStyle === "brutal" || root.hudStyle === "glitch") ? 420 : 480
     hudHideTimer.restart()
   }
 
@@ -156,6 +153,7 @@ BarWidget {
       root.autoSense = (data.autoSense === undefined) ? true : !!data.autoSense
       root.flashHud = (data.flashHud === undefined) ? true : !!data.flashHud
       root.hudStyle = data.hudStyle || "brutal"
+      root.hudPos = data.hudPos || "center"
       var seq = parseInt(data.hudPreviewSeq || 0)
       var shouldDemo = (root.hudPreviewSeq !== -1 && seq !== root.hudPreviewSeq)
       root.hudPreviewSeq = seq
@@ -508,7 +506,7 @@ BarWidget {
     }
   }
 
-  // Optional Hacker Flash HUD (ticker | banner | splat | crt | brutal)
+  // Optional Transparent Hacker Flash HUD (wire | laser | amiga | glitch | brutal)
   PanelWindow {
     id: flashHudWindow
     visible: root.hudVisible || hudCard.opacity > 0.01
@@ -520,38 +518,24 @@ BarWidget {
     exclusionMode: ExclusionMode.Ignore
     mask: Region {}
 
-    readonly property bool isCentered: root.hudStyle === "splat" || root.hudStyle === "brutal"
-    readonly property bool isFullWidth: root.hudStyle === "banner" || root.hudStyle === "crt" || root.hudStyle === "brutal"
-
-    Rectangle {
+    Item {
       id: hudCard
       anchors.horizontalCenter: parent.horizontalCenter
-      anchors.verticalCenter: flashHudWindow.isCentered ? parent.verticalCenter : undefined
-      anchors.bottom: flashHudWindow.isCentered ? undefined : parent.bottom
-      anchors.bottomMargin: flashHudWindow.isCentered ? 0 : (root.hudStyle === "banner" || root.hudStyle === "crt" ? Style.space(28) : Style.space(48))
-      width: {
-        if (flashHudWindow.isFullWidth) return parent.width
-        if (root.hudStyle === "splat") return Math.min(parent.width - Style.gapsOut * 4, Math.max(Style.space(520), parent.width * 0.78))
-        return Math.min(parent.width - Style.gapsOut * 4, Math.max(Style.space(340), hudMainCol.implicitWidth + Style.space(48)))
-      }
+      anchors.top: root.hudPos === "top" ? parent.top : undefined
+      anchors.topMargin: root.hudPos === "top" ? Style.space(56) : 0
+      anchors.verticalCenter: root.hudPos === "center" ? parent.verticalCenter : undefined
+      anchors.bottom: root.hudPos === "bottom" ? parent.bottom : undefined
+      anchors.bottomMargin: root.hudPos === "bottom" ? Style.space(44) : 0
+      width: parent.width - Style.gapsOut * 2
       height: {
         if (root.hudStyle === "brutal") return Style.space(210)
-        if (root.hudStyle === "splat") return Style.space(160)
-        if (root.hudStyle === "crt") return Style.space(132)
-        if (root.hudStyle === "banner") return Style.space(78)
-        return Style.space(52)
+        if (root.hudStyle === "glitch") return Style.space(180)
+        if (root.hudStyle === "amiga") return Style.space(140)
+        if (root.hudStyle === "laser") return Style.space(100)
+        return Style.space(78)
       }
-      radius: flashHudWindow.isFullWidth ? 0 : Style.cornerRadius
-      clip: true
-      color: {
-        if (root.hudStyle === "brutal") return "transparent"
-        if (root.hudStyle === "crt") return Qt.rgba(0.04, 0.05, 0.08, 0.94)
-        return Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.92)
-      }
-      border.width: flashHudWindow.isFullWidth ? 0 : 2
-      border.color: root.wsColor
       opacity: root.hudVisible ? 1.0 : 0.0
-      scale: (flashHudWindow.isCentered && !root.hudVisible) ? 0.94 : 1.0
+      scale: !root.hudVisible ? (root.hudStyle === "glitch" ? 1.14 : 0.94) : 1.0
 
       Behavior on opacity {
         NumberAnimation { duration: root.hudVisible ? 45 : 95; easing.type: Easing.OutCubic }
@@ -560,52 +544,64 @@ BarWidget {
         NumberAnimation { duration: root.hudVisible ? 55 : 95; easing.type: Easing.OutBack }
       }
 
-      // Top & bottom neon rails for full-width/centered styles (except transparent brutal)
-      Rectangle {
-        visible: root.hudStyle !== "brutal"
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: root.hudStyle === "splat" ? 3 : 2
-        color: root.wsColor
-      }
-      Rectangle {
-        visible: root.hudStyle !== "brutal" && (flashHudWindow.isFullWidth || root.hudStyle === "splat")
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: root.hudStyle === "splat" ? 3 : 2
-        color: root.wsColor
+      // --- WIRE style: floating corner reticle brackets ---
+      Item {
+        visible: root.hudStyle === "wire"
+        anchors.centerIn: parent
+        width: Math.min(parent.width, Math.max(Style.space(320), hudMainCol.implicitWidth + Style.space(56)))
+        height: Style.space(68)
+
+        // Top-left bracket
+        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: 18; height: 2; color: root.wsColor }
+        Rectangle { anchors.top: parent.top; anchors.left: parent.left; width: 2; height: 18; color: root.wsColor }
+        // Top-right bracket
+        Rectangle { anchors.top: parent.top; anchors.right: parent.right; width: 18; height: 2; color: root.wsColor }
+        Rectangle { anchors.top: parent.top; anchors.right: parent.right; width: 2; height: 18; color: root.wsColor }
+        // Bottom-left bracket
+        Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; width: 18; height: 2; color: root.wsColor }
+        Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; width: 2; height: 18; color: root.wsColor }
+        // Bottom-right bracket
+        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: 18; height: 2; color: root.wsColor }
+        Rectangle { anchors.bottom: parent.bottom; anchors.right: parent.right; width: 2; height: 18; color: root.wsColor }
       }
 
-      // CRT / Amiga copper raster bars (for crt)
-      Column {
-        visible: root.hudStyle === "crt"
+      // --- LASER style: twin expanding razor beams ---
+      Item {
+        visible: root.hudStyle === "laser"
         anchors.fill: parent
-        spacing: 2
-        opacity: 0.28
-        Repeater {
-          model: 12
-          Rectangle {
-            width: parent.width
-            height: 8
-            color: index % 3 === 0 ? root.wsColor : (index % 3 === 1 ? "#7dcfff" : "#bb9af7")
-          }
+        Rectangle {
+          anchors.top: parent.top
+          anchors.horizontalCenter: parent.horizontalCenter
+          width: root.hudVisible ? parent.width * 0.88 : 0
+          height: 2
+          color: root.wsColor
+          Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutExpo } }
+        }
+        Rectangle {
+          anchors.bottom: parent.bottom
+          anchors.horizontalCenter: parent.horizontalCenter
+          width: root.hudVisible ? parent.width * 0.88 : 0
+          height: 2
+          color: root.wsColor
+          Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutExpo } }
         }
       }
 
-      // Heavy scanlines (except transparent brutal)
+      // --- AMIGA style: translucent floating copper-bar ribbon (no dark box) ---
       Column {
-        visible: root.hudStyle !== "brutal"
-        anchors.fill: parent
-        spacing: root.hudStyle === "crt" ? 2 : 3
-        opacity: root.hudStyle === "crt" ? 0.26 : 0.12
+        visible: root.hudStyle === "amiga"
+        anchors.centerIn: parent
+        width: parent.width * 0.92
+        spacing: 3
+        opacity: 0.34
         Repeater {
-          model: 48
+          model: 7
           Rectangle {
-            width: parent.width
-            height: 1
-            color: "#000000"
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: parent.width * (1.0 - Math.abs(index - 3) * 0.08)
+            height: 4
+            radius: 2
+            color: index === 3 ? root.wsColor : (index % 2 === 0 ? "#7dcfff" : "#bb9af7")
           }
         }
       }
@@ -615,111 +611,125 @@ BarWidget {
         id: hudMainCol
         anchors.centerIn: parent
         spacing: Style.space(6)
-        width: Math.min(hudCard.width - Style.space(48), parent.width - Style.space(48))
+        width: hudCard.width - Style.space(48)
 
-        // Telemetry micro-header for banner / splat / crt / brutal
+        // Telemetry micro-header
         Text {
-          visible: root.hudStyle !== "ticker"
           Layout.alignment: Qt.AlignHCenter
           text: {
             var wsStr = root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId)
             if (root.hudStyle === "brutal") return ">>> WORKSPACE " + wsStr + " // LOCKED IN <<<"
-            if (root.hudStyle === "crt") return ":: AMIGA-BEACON 0x" + wsStr + " :: " + root.fxMode.toUpperCase() + " ::"
-            if (root.hudStyle === "splat") return "[// WS " + wsStr + " //]"
-            return "0x" + wsStr + " // ACTIVE WORKSPACE CONTEXT"
+            if (root.hudStyle === "glitch") return "[// WS " + wsStr + " :: OVERRIDE //]"
+            if (root.hudStyle === "amiga") return ":: AMIGA-COPPER 0x" + wsStr + " ::"
+            if (root.hudStyle === "laser") return "0x" + wsStr + " // VECTOR LOCK"
+            return "RETICLE // WS " + wsStr
           }
           color: root.wsColor
           font.family: Style.font.monoFamily || "monospace"
-          font.pixelSize: (root.hudStyle === "brutal" || root.hudStyle === "splat") ? Style.font.body : Style.font.caption
+          font.pixelSize: (root.hudStyle === "brutal" || root.hudStyle === "glitch") ? Style.font.body : Style.font.caption
           font.bold: true
           font.letterSpacing: 2.5
         }
 
-        // Ticker layout (compact row) vs Big centered layouts
-        RowLayout {
+        // Main Text Stack (transparent floating over everything)
+        Item {
           Layout.alignment: Qt.AlignHCenter
-          spacing: Style.space(12)
+          implicitWidth: Math.min(hudMainCol.width, mainHudText.implicitWidth)
+          implicitHeight: mainHudText.implicitHeight
 
-          Rectangle {
-            visible: root.hudStyle === "ticker"
-            radius: Style.space(4)
-            color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.22)
-            border.width: 1
-            border.color: root.wsColor
-            implicitWidth: wsTag.implicitWidth + Style.space(14)
-            implicitHeight: Style.space(28)
-
-            Text {
-              id: wsTag
-              anchors.centerIn: parent
-              text: "WS " + (root.activeWsId < 10 ? "0" + root.activeWsId : String(root.activeWsId))
-              color: root.wsColor
-              font.family: Style.font.monoFamily || "monospace"
-              font.pixelSize: Style.font.body
-              font.bold: true
-            }
+          // Dark legibility shadow (all transparent styles)
+          Text {
+            x: 2; y: 3
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: mainHudText.text
+            color: Qt.rgba(0, 0, 0, 0.85)
+            font: mainHudText.font
+            elide: Text.ElideRight
           }
 
-          // RGB-split brutalist text stack
-          Item {
-            Layout.alignment: Qt.AlignHCenter
-            implicitWidth: Math.min(hudMainCol.width, mainHudText.implicitWidth)
-            implicitHeight: mainHudText.implicitHeight
+          // Cyan RGB-split ghost (brutal & glitch)
+          Text {
+            visible: root.hudStyle === "brutal" || root.hudStyle === "glitch"
+            x: root.hudStyle === "glitch" ? -7 : -4
+            y: root.hudStyle === "glitch" ? -3 : -2
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: mainHudText.text
+            color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
+            font: mainHudText.font
+            elide: Text.ElideRight
+          }
 
-            // Dark legibility shadow for transparent brutal text
-            Text {
-              visible: root.hudStyle === "brutal"
-              x: 2; y: 3
-              width: parent.width
-              horizontalAlignment: Text.AlignHCenter
-              text: mainHudText.text
-              color: Qt.rgba(0, 0, 0, 0.80)
-              font: mainHudText.font
-              elide: Text.ElideRight
-            }
+          // Magenta RGB-split ghost (brutal & glitch)
+          Text {
+            visible: root.hudStyle === "brutal" || root.hudStyle === "glitch"
+            x: root.hudStyle === "glitch" ? 7 : 4
+            y: root.hudStyle === "glitch" ? 3 : 2
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: mainHudText.text
+            color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
+            font: mainHudText.font
+            elide: Text.ElideRight
+          }
 
-            // Cyan chromatic aberration ghost (brutal only)
-            Text {
-              visible: root.hudStyle === "brutal"
-              x: -4; y: -2
-              width: parent.width
-              horizontalAlignment: Text.AlignHCenter
-              text: mainHudText.text
-              color: Qt.rgba(0.2, 0.95, 1.0, 0.65)
-              font: mainHudText.font
-              elide: Text.ElideRight
-            }
+          // Amiga vertical copper echo ghosts
+          Text {
+            visible: root.hudStyle === "amiga"
+            x: 0; y: -5
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: mainHudText.text
+            color: Qt.rgba(0.49, 0.81, 1.0, 0.45)
+            font: mainHudText.font
+            elide: Text.ElideRight
+          }
+          Text {
+            visible: root.hudStyle === "amiga"
+            x: 0; y: 5
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: mainHudText.text
+            color: Qt.rgba(0.73, 0.60, 0.97, 0.45)
+            font: mainHudText.font
+            elide: Text.ElideRight
+          }
 
-            // Magenta chromatic aberration ghost (brutal only)
-            Text {
-              visible: root.hudStyle === "brutal"
-              x: 4; y: 2
-              width: parent.width
-              horizontalAlignment: Text.AlignHCenter
-              text: mainHudText.text
-              color: Qt.rgba(1.0, 0.2, 0.55, 0.65)
-              font: mainHudText.font
-              elide: Text.ElideRight
-            }
+          // Extra 4-way glitch echoes
+          Text {
+            visible: root.hudStyle === "glitch"
+            x: -12; y: 1
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: mainHudText.text
+            color: Qt.rgba(root.wsColor.r, root.wsColor.g, root.wsColor.b, 0.35)
+            font: mainHudText.font
+            elide: Text.ElideRight
+          }
 
-            Text {
-              id: mainHudText
-              width: parent.width
-              horizontalAlignment: Text.AlignHCenter
-              text: root.hudDisplayText.toUpperCase()
-              color: Color.foreground
-              font.family: Style.font.monoFamily || "monospace"
-              font.pixelSize: {
-                if (root.hudStyle === "brutal") return Style.space(64)
-                if (root.hudStyle === "splat") return Style.space(48)
-                if (root.hudStyle === "crt") return Style.space(40)
-                if (root.hudStyle === "banner") return Style.space(26)
-                return Style.font.title || 18
-              }
-              font.bold: true
-              font.letterSpacing: root.hudStyle === "brutal" ? 3 : (root.hudStyle === "ticker" ? 0 : 1.5)
-              elide: Text.ElideRight
+          Text {
+            id: mainHudText
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: root.hudDisplayText.toUpperCase()
+            color: Color.foreground
+            font.family: Style.font.monoFamily || "monospace"
+            font.pixelSize: {
+              if (root.hudStyle === "brutal") return Style.space(64)
+              if (root.hudStyle === "glitch") return Style.space(52)
+              if (root.hudStyle === "amiga") return Style.space(42)
+              if (root.hudStyle === "laser") return Style.space(34)
+              return Style.space(26)
             }
+            font.bold: true
+            font.letterSpacing: {
+              if (root.hudStyle === "brutal") return 3
+              if (root.hudStyle === "laser") return 4.5
+              if (root.hudStyle === "glitch") return 2
+              return 1.5
+            }
+            elide: Text.ElideRight
           }
         }
       }

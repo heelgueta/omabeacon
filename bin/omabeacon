@@ -17,7 +17,8 @@ STATE_DIR = Path.home() / ".local" / "state" / "omarchy" / "omabeacon"
 STATE_FILE = STATE_DIR / "state.json"
 
 VALID_FX = ("clean", "pulse", "copper", "scramble", "marquee", "stealth")
-VALID_HUD_STYLES = ("ticker", "banner", "splat", "crt", "brutal")
+VALID_HUD_STYLES = ("wire", "laser", "amiga", "glitch", "brutal")
+VALID_HUD_POS = ("top", "center", "bottom")
 
 TERMINAL_CLASSES = {
     "alacritty",
@@ -43,6 +44,7 @@ def default_state() -> dict:
         "autoSense": True,
         "flashHud": True,
         "hudStyle": "brutal",
+        "hudPos": "center",
         "hudPreviewSeq": 0,
         "workspaces": {},
     }
@@ -63,6 +65,7 @@ def load_state() -> dict:
     base["autoSense"] = True if "autoSense" not in data else bool(data.get("autoSense"))
     base["flashHud"] = bool(data.get("flashHud", True))
     base["hudStyle"] = data.get("hudStyle") if data.get("hudStyle") in VALID_HUD_STYLES else "brutal"
+    base["hudPos"] = data.get("hudPos") if data.get("hudPos") in VALID_HUD_POS else "center"
     base["hudPreviewSeq"] = int(data.get("hudPreviewSeq", 0))
     ws = data.get("workspaces")
     base["workspaces"] = ws if isinstance(ws, dict) else {}
@@ -259,6 +262,10 @@ def main() -> int:
     p_hudstyle.add_argument("style", choices=VALID_HUD_STYLES)
     p_hudstyle.add_argument("--demo", action="store_true")
 
+    p_hudpos = sub.add_parser("hudpos", help="Set flash HUD position and optionally trigger demo")
+    p_hudpos.add_argument("pos", choices=VALID_HUD_POS)
+    p_hudpos.add_argument("--demo", action="store_true")
+
     sub.add_parser("demo", help="Trigger a live flash HUD demo preview")
 
     p_sense = sub.add_parser("sense", help="Locally inspect current workspace windows/processes")
@@ -335,6 +342,14 @@ def main() -> int:
 
     if args.cmd == "hudstyle":
         state["hudStyle"] = args.style
+        if args.demo:
+            state["flashHud"] = True
+            state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
+        save_state(state)
+        return 0
+
+    if args.cmd == "hudpos":
+        state["hudPos"] = args.pos
         if args.demo:
             state["flashHud"] = True
             state["hudPreviewSeq"] = int(state.get("hudPreviewSeq", 0)) + 1
