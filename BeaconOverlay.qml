@@ -176,6 +176,35 @@ Item {
     }
   }
 
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (!root.opened) return
+      var name = String(event && event.name ? event.name : "")
+      if (name === "workspace" || name === "createworkspace") {
+        var id = parseInt(String(event.data || "").split(",")[0])
+        if (!isNaN(id) && id >= 1 && id <= 99 && id !== root.editWsId) {
+          root.selectWorkspace(id)
+        }
+      } else if (name === "focusedmon") {
+        var parts = String(event.data || "").split(",")
+        if (parts.length >= 2) {
+          var monId = parseInt(parts[1].trim())
+          if (!isNaN(monId) && monId >= 1 && monId <= 99 && monId !== root.editWsId) {
+            root.selectWorkspace(monId)
+          }
+        }
+      }
+    }
+  }
+
+  readonly property var focusedWs: Hyprland.focusedWorkspace
+  onFocusedWsChanged: {
+    if (root.opened && focusedWs && focusedWs.id && focusedWs.id !== root.editWsId) {
+      root.selectWorkspace(focusedWs.id)
+    }
+  }
+
   PanelWindow {
     id: panel
     visible: root.opened
