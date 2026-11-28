@@ -94,7 +94,7 @@ Item {
   property string hudPos: "center"
   property string hudSize: "mega"
   property string hudColorFx: "mid"
-  property string hudCase: "upper"
+  property string hudCase: "asis"
   property string paletteName: "tokyo"
   property string glyphPos: "above"
   property string currentKeybind: "SUPER + N"
@@ -256,12 +256,37 @@ Item {
     senseProc.running = true
   }
 
+  property bool stateInitAttempted: false
+
+  Process {
+    id: initStateProc
+    command: [root.cliPath, "init"]
+    onExited: (code) => {
+      if (code === 0) root.rebindStateWatcher()
+    }
+  }
+
+  function rebindStateWatcher() {
+    stateWatcher.path = ""
+    stateWatcher.path = root.stateFilePath
+  }
+
   FileView {
     id: stateWatcher
     path: root.stateFilePath
     watchChanges: true
-    onLoaded: root.loadState()
+    printErrors: false
+    onLoaded: {
+      root.stateInitAttempted = false
+      root.loadState()
+    }
     onFileChanged: reload()
+    onLoadFailed: {
+      if (!root.stateInitAttempted && !initStateProc.running) {
+        root.stateInitAttempted = true
+        initStateProc.running = true
+      }
+    }
   }
 
   function loadState() {
@@ -277,7 +302,7 @@ Item {
       root.hudPos = data.hudPos || "center"
       root.hudSize = data.hudSize || "mega"
       root.hudColorFx = data.hudColorFx || "mid"
-      root.hudCase = data.hudCase || "upper"
+      root.hudCase = data.hudCase || "asis"
       root.paletteName = data.palette || "tokyo"
       root.glyphPos = data.glyphPos || "above"
       root.currentKeybind = data.keybind || "SUPER + N"

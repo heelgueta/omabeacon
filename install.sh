@@ -11,6 +11,7 @@ mkdir -p "$PLUGINS_DIR" "$LOCAL_BIN"
 
 ln -sfn "$REPO_DIR" "$TARGET_LINK"
 ln -sfn "$REPO_DIR/bin/omabeacon" "$LOCAL_BIN/omabeacon"
+"$REPO_DIR/bin/omabeacon" init
 
 omarchy plugin validate "$REPO_DIR"
 echo "Linked $TARGET_LINK -> $REPO_DIR"

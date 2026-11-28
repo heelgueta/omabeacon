@@ -66,7 +66,7 @@ def default_state() -> dict:
         "hudPos": "center",
         "hudSize": "mega",
         "hudColorFx": "mid",
-        "hudCase": "upper",
+        "hudCase": "asis",
         "palette": "tokyo",
         "glyphPos": "above",
         "keybind": "SUPER + N",
@@ -99,7 +99,7 @@ def load_state() -> dict:
     base["hudPos"] = data.get("hudPos") if data.get("hudPos") in VALID_HUD_POS else "center"
     base["hudSize"] = data.get("hudSize") if data.get("hudSize") in VALID_HUD_SIZES else "mega"
     base["hudColorFx"] = data.get("hudColorFx") if data.get("hudColorFx") in VALID_HUD_COLORFX else "mid"
-    base["hudCase"] = data.get("hudCase") if data.get("hudCase") in VALID_HUD_CASE else "upper"
+    base["hudCase"] = data.get("hudCase") if data.get("hudCase") in VALID_HUD_CASE else "asis"
     base["palette"] = data.get("palette") if data.get("palette") in PALETTES else "tokyo"
     base["glyphPos"] = data.get("glyphPos") if data.get("glyphPos") in VALID_GLYPH_POS else "above"
     base["keybind"] = str(data.get("keybind") or "SUPER + N")
@@ -722,10 +722,17 @@ def main() -> int:
     p_sense.add_argument("ws", nargs="?", type=int, default=None)
     p_sense.add_argument("--json", action="store_true")
 
+    sub.add_parser("init", help="Ensure state file exists with default settings")
+
     p_get = sub.add_parser("get", help="Print state JSON")
     p_get.add_argument("ws", nargs="?", default=None)
 
     args = parser.parse_args()
+
+    if args.cmd == "init":
+        if not STATE_FILE.exists():
+            save_state(default_state())
+        return 0
 
     if args.cmd == "sense":
         res = sense_workspace(args.ws)
